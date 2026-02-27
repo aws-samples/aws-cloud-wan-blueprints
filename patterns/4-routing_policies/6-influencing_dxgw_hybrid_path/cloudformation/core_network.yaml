@@ -78,53 +78,53 @@ Resources:
             segment: hybrid
             share-with:
               - europevpcs
-            # routing-policy-names:
-            #   - addASPathUS
+            routing-policy-names:
+              - addASPathUS
           - action: share
             mode: attachment-route
             segment: hybrid
             share-with:
               - usvpcs
-            # routing-policy-names:
-            #   - addASPathEurope
+            routing-policy-names:
+              - addASPathEurope
           - action: share
             mode: attachment-route
             segment: europevpcs
             share-with:
               - usvpcs
-        # routing-policies:
-        #   - routing-policy-name: addASPathEurope
-        #     routing-policy-description: Adding extra ASNs for Europe's DXGW
-        #     routing-policy-direction: outbound
-        #     routing-policy-number: 100
-        #     routing-policy-rules:
-        #       - rule-number: 100
-        #         rule-definition:
-        #           match-conditions:
-        #             - type: asn-in-as-path
-        #               value: 64512
-        #           condition-logic: or
-        #           action:
-        #             type: prepend-asn-list
-        #             value:
-        #               - 65500
-        #               - 65501
-        #   - routing-policy-name: addASPathUS
-        #     routing-policy-description: Adding extra ASNs for US' DXGW
-        #     routing-policy-direction: outbound
-        #     routing-policy-number: 200
-        #     routing-policy-rules:
-        #       - rule-number: 100
-        #         rule-definition:
-        #           match-conditions:
-        #             - type: asn-in-as-path
-        #               value: 64513
-        #           condition-logic: or
-        #           action:
-        #             type: prepend-asn-list
-        #             value:
-        #               - 65500
-        #               - 65501
+        routing-policies:
+          - routing-policy-name: addASPathEurope
+            routing-policy-description: Adding extra ASNs for Europe's DXGW
+            routing-policy-direction: outbound
+            routing-policy-number: 100
+            routing-policy-rules:
+              - rule-number: 100
+                rule-definition:
+                  match-conditions:
+                    - type: asn-in-as-path
+                      value: 64512
+                  condition-logic: or
+                  action:
+                    type: prepend-asn-list
+                    value:
+                      - 65500
+                      - 65501
+          - routing-policy-name: addASPathUS
+            routing-policy-description: Adding extra ASNs for US' DXGW
+            routing-policy-direction: outbound
+            routing-policy-number: 200
+            routing-policy-rules:
+              - rule-number: 100
+                rule-definition:
+                  match-conditions:
+                    - type: asn-in-as-path
+                      value: 64513
+                  condition-logic: or
+                  action:
+                    type: prepend-asn-list
+                    value:
+                      - 65500
+                      - 65501
 
 Outputs:
   CoreNetworkId:
