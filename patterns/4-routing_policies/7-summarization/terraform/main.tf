@@ -62,14 +62,6 @@ resource "aws_networkmanager_prefix_list_association" "ireland_prefix_list_assoc
   depends_on = [module.ireland_spoke_vpcs, module.nvirginia_spoke_vpcs]
 }
 
-import {
-  to = aws_networkmanager_prefix_list_association.ireland_prefix_list_association
-  identity = {
-    core_network_id = aws_networkmanager_core_network.core_network.id
-    prefix_list_arn = aws_ec2_managed_prefix_list.ireland_ipv4_cidr_blocks.arn
-  }
-}
-
 # ---------- PREFIX LIST (Oregon) ----------
 resource "aws_ec2_managed_prefix_list" "nvirginia_ipv4_cidr_blocks" {
   provider = aws.awsoregon
