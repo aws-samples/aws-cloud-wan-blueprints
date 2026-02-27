@@ -19,7 +19,7 @@ resource "awscc_networkmanager_core_network" "core_network" {
   global_network_id = awscc_networkmanager_global_network.global_network.id
   description       = "Core Network - ${var.identifier}"
 
-  policy_document = file("${path.module}/cloudwan_policy.json")
+  policy_document = data.aws_networkmanager_core_network_policy_document.policy_document.json
 
   tags = [{
     key   = "Name"
@@ -56,6 +56,17 @@ module "ireland_spoke_vpcs" {
       tags = { domain = each.value.segment }
     }
   }
+}
+
+resource "aws_networkmanager_attachment_routing_policy_label" "ireland_routing_policy_label" {
+  for_each = var.ireland_spoke_vpcs
+  provider = aws.awsireland
+
+  core_network_id      = awscc_networkmanager_core_network.core_network.core_network_id
+  attachment_id        = module.ireland_spoke_vpcs[each.key].core_network_attachment.id
+  routing_policy_label = "vpcAttachments"
+
+  depends_on = [module.ireland_spoke_vpcs]
 }
 
 module "ireland_secondary_cidr_blocks" {
@@ -162,6 +173,17 @@ module "nvirginia_spoke_vpcs" {
       tags = { domain = each.value.segment }
     }
   }
+}
+
+resource "aws_networkmanager_attachment_routing_policy_label" "nvirginia_routing_policy_label" {
+  for_each = var.nvirginia_spoke_vpcs
+  provider = aws.awsnvirginia
+
+  core_network_id      = awscc_networkmanager_core_network.core_network.core_network_id
+  attachment_id        = module.nvirginia_spoke_vpcs[each.key].core_network_attachment.id
+  routing_policy_label = "vpcAttachments"
+
+  depends_on = [module.ireland_spoke_vpcs]
 }
 
 module "nvirginia_secondary_cidr_blocks" {

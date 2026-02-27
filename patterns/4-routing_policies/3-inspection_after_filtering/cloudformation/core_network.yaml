@@ -97,6 +97,8 @@ Resources:
                   match-conditions:
                     - type: prefix-in-cidr
                       value: 0.0.0.0/0
+                    - type: prefix-equals
+                      value: 0.0.0.0/0
                   condition-logic: or
                   action:
                     type: drop
