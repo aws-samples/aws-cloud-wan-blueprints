@@ -209,7 +209,7 @@ Resources:
     - 'Instance${AvailabilityZone}':
         Type: AWS::EC2::Instance
         Properties:
-          InstanceType: t3.micro
+          InstanceType: t2.micro
           SecurityGroupIds:
             - !Ref VPCInstanceSecurityGroup
           SubnetId: !Ref

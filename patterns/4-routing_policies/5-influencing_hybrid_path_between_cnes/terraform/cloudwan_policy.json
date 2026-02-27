@@ -4,32 +4,34 @@
     "vpn-ecmp-support": true,
     "dns-support": true,
     "security-group-referencing-support": true,
-    "asn-ranges": [
-      "65000-65003"
-    ],
+    "asn-ranges": ["65000-65003"],
     "edge-locations": [
-      {
-        "location": "us-east-1",
-        "asn": 65000
-      },
-      {
-        "location": "eu-west-1",
-        "asn": 65001
-      },
-      {
-        "location": "eu-west-2",
-        "asn": 65002
-      }
+      { "location": "us-east-1", "asn": 65000 },
+      { "location": "eu-west-1", "asn": 65001 },
+      { "location": "eu-west-2", "asn": 65002 }
     ]
   },
   "segments": [
+    { "name": "vpcs", "require-attachment-acceptance": false },
+    { "name": "hybrid", "require-attachment-acceptance": false }
+  ],
+  "attachment-policies": [
     {
-      "name": "vpcs",
-      "require-attachment-acceptance": false
+      "rule-number": 100,
+      "condition-logic": "and",
+      "conditions": [
+        { "type": "attachment-type", "operator": "equals", "value": "vpc" }
+      ],
+      "action": { "association-method": "constant", "segment": "vpcs" }
     },
     {
-      "name": "hybrid",
-      "require-attachment-acceptance": false
+      "rule-number": 200,
+      "condition-logic": "or",
+      "conditions": [
+        { "type": "attachment-type", "operator": "equals", "value": "site-to-site-vpn" },
+        { "type": "attachment-type", "operator": "equals", "value": "connect" }
+      ],
+      "action": { "association-method": "constant", "segment": "hybrid" }
     }
   ],
   "segment-actions": [
@@ -37,81 +39,35 @@
       "action": "share",
       "mode": "attachment-route",
       "segment": "vpcs",
-      "share-with": [
-        "hybrid"
-      ]
+      "share-with": ["hybrid"]
     },
     {
       "action": "associate-routing-policy",
       "segment": "vpcs",
       "edge-location-association": {
-        "routing-policy-names": [
-          "addASPath"
-        ],
+        "routing-policy-names": ["addASPath"],
         "edge-location": "us-east-1",
         "peer-edge-location": "eu-west-1"
-      }
-    }
-  ],
-  "attachment-policies": [
-    {
-      "rule-number": 100,
-      "condition-logic": "and",
-      "conditions": [
-        {
-          "type": "attachment-type",
-          "operator": "equals",
-          "value": "vpc"
-        }
-      ],
-      "action": {
-        "association-method": "constant",
-        "segment": "vpcs"
-      }
-    },
-    {
-      "rule-number": 200,
-      "condition-logic": "or",
-      "conditions": [
-        {
-          "type": "attachment-type",
-          "operator": "equals",
-          "value": "site-to-site-vpn"
-        },
-        {
-          "type": "attachment-type",
-          "operator": "equals",
-          "value": "connect"
-        }
-      ],
-      "action": {
-        "association-method": "constant",
-        "segment": "hybrid"
       }
     }
   ],
   "routing-policies": [
     {
       "routing-policy-name": "addASPath",
+      "routing-policy-description": "Adding extra ASNs (to influence hybrid traffic)",
       "routing-policy-direction": "outbound",
       "routing-policy-number": 100,
       "routing-policy-rules": [
         {
           "rule-number": 100,
           "rule-definition": {
-            "match-conditions": [
-              {
-                "type": "asn-in-as-path",
-                "value": 65052
-              }
-            ],
             "condition-logic": "or",
+            "match-conditions": [
+              { "type": "asn-in-as-path", "value": 65052 }
+            ],
             "action": {
               "type": "prepend-asn-list",
-              "value": [
-                65500,
-                65501
-              ]
+              "value": [65500, 65501]
             }
           }
         }
