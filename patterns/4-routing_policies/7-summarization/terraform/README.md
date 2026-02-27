@@ -36,6 +36,7 @@ terraform apply
 > 1. **Prefix List Association Region**: The prefix list association MUST be created in `us-west-2` as it is Cloud WAN's home region, regardless of where your Core Network edge locations are deployed.
 > 2. **Routing Policy Label**: After deployment, when you create your hybrid connections (Site-to-Site VPN, Connect, or Direct Connect Gateway), you MUST add the routing policy label `hybridAttachment` to the attachment for the summarization policy to be applied.
 > 3. **Dual-Stack VPCs**: VPCs are deployed as dual-stack (IPv4 and IPv6), but the summarization policy only applies to IPv4 CIDR blocks. IPv6 routes will be advertised without summarization.
+> 4. **DXGW Summarization**: Direct Connect Gateway attachments require per-region summarization. Because a DXGW is attached to all CNEs, advertising a single supernet (e.g., 10.0.0.0/8) from every CNE would cause on-premises routers to see equal-cost paths, potentially routing traffic into any CNE and causing cross-region traffic. Per-region supernets (10.10.0.0/16 from us-east-1, 10.0.0.0/16 from eu-west-1) ensure traffic enters through the closest CNE. VPN and Connect attachments connect to a single CNE, so a single supernet (10.0.0.0/8) is safe.
 
 ## Cleanup
 
@@ -87,16 +88,15 @@ After successfully deploying this pattern:
 | Name | Version |
 |------|---------|
 | <a name="requirement_terraform"></a> [terraform](#requirement\_terraform) | >= 1.3.0 |
-| <a name="requirement_aws"></a> [aws](#requirement\_aws) | >= 6.0.0 |
-| <a name="requirement_awscc"></a> [awscc](#requirement\_awscc) | >= 1.67.0 |
+| <a name="requirement_aws"></a> [aws](#requirement\_aws) | >= 6.34.0 |
 
 ## Providers
 
 | Name | Version |
 |------|---------|
-| <a name="provider_aws.awsnvirginia"></a> [aws.awsnvirginia](#provider\_aws.awsnvirginia) | 6.27.0 |
-| <a name="provider_aws.awsoregon"></a> [aws.awsoregon](#provider\_aws.awsoregon) | 6.27.0 |
-| <a name="provider_awscc.awsccoregon"></a> [awscc.awsccoregon](#provider\_awscc.awsccoregon) | 1.67.0 |
+| <a name="provider_aws"></a> [aws](#provider\_aws) | 6.34.0 |
+| <a name="provider_aws.awsnvirginia"></a> [aws.awsnvirginia](#provider\_aws.awsnvirginia) | 6.34.0 |
+| <a name="provider_aws.awsoregon"></a> [aws.awsoregon](#provider\_aws.awsoregon) | 6.34.0 |
 
 ## Modules
 
@@ -111,13 +111,17 @@ After successfully deploying this pattern:
 
 | Name | Type |
 |------|------|
-| [aws_ec2_managed_prefix_list.ipv4_cidr_blocks](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/ec2_managed_prefix_list) | resource |
+| [aws_ec2_managed_prefix_list.ireland_ipv4_cidr_blocks](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/ec2_managed_prefix_list) | resource |
+| [aws_ec2_managed_prefix_list.nvirginia_ipv4_cidr_blocks](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/ec2_managed_prefix_list) | resource |
 | [aws_ec2_managed_prefix_list_entry.ireland_cidr_blocks](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/ec2_managed_prefix_list_entry) | resource |
 | [aws_ec2_managed_prefix_list_entry.nvirginia_cidr_blocks](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/ec2_managed_prefix_list_entry) | resource |
 | [aws_networkmanager_core_network.core_network](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/networkmanager_core_network) | resource |
 | [aws_networkmanager_core_network_policy_attachment.core_network_policy_attachment](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/networkmanager_core_network_policy_attachment) | resource |
 | [aws_networkmanager_global_network.global_network](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/networkmanager_global_network) | resource |
-| [awscc_networkmanager_core_network_prefix_list_association.prefix_list_association](https://registry.terraform.io/providers/hashicorp/awscc/latest/docs/resources/networkmanager_core_network_prefix_list_association) | resource |
+| [aws_networkmanager_prefix_list_association.ireland_prefix_list_association](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/networkmanager_prefix_list_association) | resource |
+| [aws_networkmanager_prefix_list_association.nvirginia_prefix_list_association](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/networkmanager_prefix_list_association) | resource |
+| [aws_networkmanager_core_network_policy_document.base_policy_document](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/networkmanager_core_network_policy_document) | data source |
+| [aws_networkmanager_core_network_policy_document.policy_document](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/networkmanager_core_network_policy_document) | data source |
 
 ## Inputs
 
@@ -133,6 +137,5 @@ After successfully deploying this pattern:
 | Name | Description |
 |------|-------------|
 | <a name="output_cloud_wan"></a> [cloud\_wan](#output\_cloud\_wan) | AWS Cloud WAN resources. |
-| <a name="output_prefix_list"></a> [prefix\_list](#output\_prefix\_list) | Prefix List (IPv4). |
 | <a name="output_vpcs"></a> [vpcs](#output\_vpcs) | VPCs created. |
 <!-- END_TF_DOCS -->

@@ -18,8 +18,3 @@ output "vpcs" {
     nvirginia = { for k, v in module.nvirginia_spoke_vpcs : k => v.vpc_attributes.id }
   }
 }
-
-output "prefix_list" {
-  description = "Prefix List (IPv4)."
-  value       = aws_ec2_managed_prefix_list.ipv4_cidr_blocks.arn
-}
