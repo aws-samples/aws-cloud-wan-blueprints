@@ -19,7 +19,7 @@ resource "awscc_networkmanager_core_network" "core_network" {
   global_network_id = awscc_networkmanager_global_network.global_network.id
   description       = "Core Network - ${var.identifier}"
 
-  policy_document = file("${path.module}/cloudwan_policy.json")
+  policy_document = data.aws_networkmanager_core_network_policy_document.policy_document.json
 
   tags = [{
     key   = "Name"

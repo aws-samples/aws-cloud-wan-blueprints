@@ -62,13 +62,13 @@ THEN associate to segment matching the "domain" tag value
 #### Rule 200
 
 ```
-IF tag "domain" == "sharedservice"
+IF tag "sharedservice" == "true"
 THEN associate to "shared" segment
 ```
 
 **Example**:
 
-- VPC tagged with `domain=sharedservice` → Associates to `shared` segment
+- VPC tagged with `sharedservice=true` → Associates to `shared` segment
 
 ### Traffic Flow
 
@@ -88,10 +88,8 @@ THEN associate to "shared" segment
   "version": "2025.11",
   "core-network-configuration": {
     "vpn-ecmp-support": false,
-    "dns-support": true,
-    "security-group-referencing-support": false,
     "asn-ranges": [
-      "64520-65525"
+      "64520-64525"
     ],
     "edge-locations": [
       {
@@ -156,8 +154,8 @@ THEN associate to "shared" segment
         {
           "type": "tag-value",
           "operator": "equals",
-          "key": "domain",
-          "value": "sharedservice"
+          "key": "sharedservice",
+          "value": "true"
         }
       ],
       "action": {

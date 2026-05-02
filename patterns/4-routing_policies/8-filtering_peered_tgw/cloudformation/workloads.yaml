@@ -264,7 +264,7 @@ Resources:
     - 'VPC1Instance${AvailabilityZone}':
         Type: AWS::EC2::Instance
         Properties:
-          InstanceType: t3.micro
+          InstanceType: t2.micro
           SecurityGroupIds:
             - !Ref VPC1InstanceSecurityGroup
           SubnetId: !Ref
@@ -493,7 +493,7 @@ Resources:
     - 'VPC2Instance${AvailabilityZone}':
         Type: AWS::EC2::Instance
         Properties:
-          InstanceType: t3.micro
+          InstanceType: t2.micro
           SecurityGroupIds:
             - !Ref VPC2InstanceSecurityGroup
           SubnetId: !Ref

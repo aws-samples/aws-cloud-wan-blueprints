@@ -55,7 +55,7 @@ Any account that connects workloads to the shared Cloud WAN:
 | **Cloud WAN Attachments** | Connect VPCs to shared core network |
 | **EC2 Instances** | Compute resources for testing |
 | **EC2 Instance Connect Endpoints** | Secure access to instances |
-| **RAM Share Acceptance** | Accept core network share (if not in same AWS Organization) |
+| **RAM Share Acceptance** | Accept core network share (if accounts are not in the same AWS Organization) |
 
 ### Segment Configuration
 
@@ -100,7 +100,7 @@ THEN associate to segment matching the "domain" tag value
   "core-network-configuration": {
     "vpn-ecmp-support": false,
     "asn-ranges": [
-      "64520-65525"
+      "64520-64525"
     ],
     "edge-locations": [
       {
@@ -161,8 +161,7 @@ THEN associate to segment matching the "domain" tag value
 ### Deployment Order
 
 1. **Networking Account**: Deploy core network and RAM share
-2. **Spoke Account**: Accept RAM share (if required)
-3. **Spoke Account**: Deploy VPCs and attachments
+2. **Spoke Account**: Accept RAM share (if accounts are not in the same AWS Organization) and deploy VPCs and attachments
 
 ## Testing Connectivity
 
@@ -181,9 +180,12 @@ aws ram get-resource-shares \
 **In Spoke Account**:
 
 ```bash
-aws ram get-resource-share-invitations \
+aws ram get-resource-shares \
+  --resource-owner OTHER-ACCOUNTS \
   --region us-east-1
 ```
+
+> **Note**: If both accounts are in the same AWS Organization with RAM sharing enabled, the share is auto-accepted. Otherwise, the share invitation needs to be accepted before deploying workloads.
 
 ### 2. Verify Segment Associations
 

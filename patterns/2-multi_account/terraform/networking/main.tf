@@ -15,15 +15,17 @@ resource "aws_networkmanager_global_network" "global_network" {
 
 # Core Network
 resource "aws_networkmanager_core_network" "core_network" {
-  description       = "Core Network - ${var.identifier}"
   global_network_id = aws_networkmanager_global_network.global_network.id
-
-  create_base_policy   = true
-  base_policy_document = data.aws_networkmanager_core_network_policy_document.policy.json
+  description       = "Core Network - ${var.identifier}"
 
   tags = {
     Name = "Core Network - ${var.identifier}"
   }
+}
+
+resource "aws_networkmanager_core_network_policy_attachment" "core_network_policy" {
+  core_network_id = aws_networkmanager_core_network.core_network.id
+  policy_document = data.aws_networkmanager_core_network_policy_document.policy.json
 }
 
 # ---------- RAM SHARE ----------

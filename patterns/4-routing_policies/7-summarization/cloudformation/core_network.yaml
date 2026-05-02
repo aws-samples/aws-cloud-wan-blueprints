@@ -76,13 +76,28 @@ Resources:
           - rule-number: 100
             conditions:
               - type: routing-policy-label
-                value: hybridAttachment
+                value: vpnAttachment
             action:
               associate-routing-policies:
                 - summarizeIpv4Routes
+          - rule-number: 200
+            conditions:
+              - type: routing-policy-label
+                value: connectAttachment
+            action:
+              associate-routing-policies:
+                - summarizeIpv4Routes
+          - rule-number: 300
+            conditions:
+              - type: routing-policy-label
+                value: dxAttachment
+            action:
+              associate-routing-policies:
+                - summarizeNVirginiaIpv4Routes
+                - summarizeIrelandIpv4Routes
         routing-policies:
           - routing-policy-name: summarizeIpv4Routes
-            routing-policy-description: Summarize IPv4 CIDR blocks
+            routing-policy-description: Summarize all IPv4 CIDR blocks
             routing-policy-direction: outbound
             routing-policy-number: 100
             routing-policy-rules:
@@ -90,11 +105,41 @@ Resources:
                 rule-definition:
                   match-conditions:
                     - type: prefix-in-prefix-list
-                      value: ipv4routes
+                      value: nvirginiaipv4routes
+                    - type: prefix-in-prefix-list
+                      value: irelandipv4routes
                   condition-logic: or
                   action:
                     type: summarize
                     value: 10.0.0.0/8
+          - routing-policy-name: summarizeNVirginiaIpv4Routes
+            routing-policy-description: Summarize N. Virginia IPv4 CIDR blocks
+            routing-policy-direction: outbound
+            routing-policy-number: 200
+            routing-policy-rules:
+              - rule-number: 100
+                rule-definition:
+                  match-conditions:
+                    - type: prefix-in-prefix-list
+                      value: nvirginiaipv4routes
+                  condition-logic: or
+                  action:
+                    type: summarize
+                    value: 10.10.0.0/16
+          - routing-policy-name: summarizeIrelandIpv4Routes
+            routing-policy-description: Summarize Ireland IPv4 CIDR blocks
+            routing-policy-direction: outbound
+            routing-policy-number: 300
+            routing-policy-rules:
+              - rule-number: 100
+                rule-definition:
+                  match-conditions:
+                    - type: prefix-in-prefix-list
+                      value: irelandipv4routes
+                  condition-logic: or
+                  action:
+                    type: summarize
+                    value: 10.0.0.0/16
 
 Outputs:
   CoreNetworkId:

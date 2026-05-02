@@ -6,8 +6,8 @@
 output "cloud_wan" {
   description = "AWS Cloud WAN resources."
   value = {
-    global_network = aws_networkmanager_global_network.global_network.id
-    core_network   = aws_networkmanager_core_network.core_network.id
+    global_network = awscc_networkmanager_global_network.global_network.global_network_id
+    core_network   = awscc_networkmanager_core_network.core_network.core_network_id
   }
 }
 

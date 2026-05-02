@@ -22,7 +22,7 @@ resource "aws_networkmanager_core_network" "core_network" {
   description       = "Core Network - ${var.identifier}"
 
   create_base_policy   = true
-  base_policy_document = file("${path.module}/base_policy.json")
+  base_policy_document = data.aws_networkmanager_core_network_policy_document.base_policy_document.json
 
   tags = {
     Name = "core-network-${var.identifier}"
@@ -33,40 +33,42 @@ resource "aws_networkmanager_core_network_policy_attachment" "core_network_polic
   provider = aws.awsnvirginia
 
   core_network_id = aws_networkmanager_core_network.core_network.id
-  policy_document = file("${path.module}/cloudwan_policy.json")
+  policy_document = data.aws_networkmanager_core_network_policy_document.policy_document.json
 
   depends_on = [
-    awscc_networkmanager_core_network_prefix_list_association.prefix_list_association,
-    module.ireland_compute,
-    module.nvirginia_compute
+    aws_networkmanager_prefix_list_association.nvirginia_prefix_list_association,
+    aws_networkmanager_prefix_list_association.ireland_prefix_list_association
   ]
 }
 
 # Prefix List association
-resource "awscc_networkmanager_core_network_prefix_list_association" "prefix_list_association" {
-  provider = awscc.awsccoregon
+resource "aws_networkmanager_prefix_list_association" "nvirginia_prefix_list_association" {
+  provider = aws.awsoregon
 
   core_network_id   = aws_networkmanager_core_network.core_network.id
-  prefix_list_arn   = aws_ec2_managed_prefix_list.ipv4_cidr_blocks.arn
-  prefix_list_alias = "ipv4routes"
+  prefix_list_arn   = aws_ec2_managed_prefix_list.nvirginia_ipv4_cidr_blocks.arn
+  prefix_list_alias = "nvirginiaipv4routes"
+
+  depends_on = [module.ireland_spoke_vpcs, module.nvirginia_spoke_vpcs]
+}
+
+resource "aws_networkmanager_prefix_list_association" "ireland_prefix_list_association" {
+  provider = aws.awsoregon
+
+  core_network_id   = aws_networkmanager_core_network.core_network.id
+  prefix_list_arn   = aws_ec2_managed_prefix_list.ireland_ipv4_cidr_blocks.arn
+  prefix_list_alias = "irelandipv4routes"
+
+  depends_on = [module.ireland_spoke_vpcs, module.nvirginia_spoke_vpcs]
 }
 
 # ---------- PREFIX LIST (Oregon) ----------
-resource "aws_ec2_managed_prefix_list" "ipv4_cidr_blocks" {
+resource "aws_ec2_managed_prefix_list" "nvirginia_ipv4_cidr_blocks" {
   provider = aws.awsoregon
 
-  name           = "IPv4 CIDR blocks - ${var.identifier}"
+  name           = "IPv4 CIDR blocks (N. Virginia) - ${var.identifier}"
   address_family = "IPv4"
-  max_entries    = length(var.ireland_spoke_vpcs) + length(var.nvirginia_spoke_vpcs)
-}
-
-resource "aws_ec2_managed_prefix_list_entry" "ireland_cidr_blocks" {
-  for_each = var.ireland_spoke_vpcs
-  provider = aws.awsoregon
-
-  cidr           = each.value.cidr_block
-  description    = each.key
-  prefix_list_id = aws_ec2_managed_prefix_list.ipv4_cidr_blocks.id
+  max_entries    = length(var.nvirginia_spoke_vpcs)
 }
 
 resource "aws_ec2_managed_prefix_list_entry" "nvirginia_cidr_blocks" {
@@ -75,7 +77,24 @@ resource "aws_ec2_managed_prefix_list_entry" "nvirginia_cidr_blocks" {
 
   cidr           = each.value.cidr_block
   description    = each.key
-  prefix_list_id = aws_ec2_managed_prefix_list.ipv4_cidr_blocks.id
+  prefix_list_id = aws_ec2_managed_prefix_list.nvirginia_ipv4_cidr_blocks.id
+}
+
+resource "aws_ec2_managed_prefix_list" "ireland_ipv4_cidr_blocks" {
+  provider = aws.awsoregon
+
+  name           = "IPv4 CIDR blocks (Ireland) - ${var.identifier}"
+  address_family = "IPv4"
+  max_entries    = length(var.ireland_spoke_vpcs)
+}
+
+resource "aws_ec2_managed_prefix_list_entry" "ireland_cidr_blocks" {
+  for_each = var.ireland_spoke_vpcs
+  provider = aws.awsoregon
+
+  cidr           = each.value.cidr_block
+  description    = each.key
+  prefix_list_id = aws_ec2_managed_prefix_list.ireland_ipv4_cidr_blocks.id
 }
 
 # ---------- RESOURCES IN IRELAND ----------

@@ -38,29 +38,9 @@ terraform apply
 # Take note of the resource_share_arn output
 ```
 
-### Step 2: Accept RAM Share (Spoke Account)
+### Step 2: Deploy workloads (Spoke Account)
 
-> **Note**: If accounts are in the same AWS Organization with RAM sharing enabled, this step is automatic.
-
-```bash
-# Assume credentials for Spoke Account
-
-# Get the resource share invitation ARN
-export RESOURCE_SHARE_ARN="<from-networking-account-output>"
-
-export RESOURCE_SHARE_INVITATION_ARN=$(aws ram get-resource-share-invitations \
-  --resource-share-arns ${RESOURCE_SHARE_ARN} \
-  --region us-east-1 \
-  --query 'resourceShareInvitations[0].resourceShareInvitationArn' \
-  --output text)
-
-# Accept the invitation
-aws ram accept-resource-share-invitation \
-  --resource-share-invitation-arn ${RESOURCE_SHARE_INVITATION_ARN} \
-  --region us-east-1
-```
-
-### Step 3: Deploy workloads (Spoke Account)
+> **Note**: RAM share acceptance is handled automatically by Terraform. If accounts are in the same AWS Organization with RAM sharing enabled, the share is auto-accepted. If not, Terraform will accept the invitation during deployment.
 
 ```bash
 # Navigate to spoke folder

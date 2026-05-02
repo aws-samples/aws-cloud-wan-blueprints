@@ -32,46 +32,6 @@ terraform plan
 terraform apply
 ```
 
-### Attach Routing Policy Labels
-
-> **Note**: This manual step is required until the AWS or AWSCC Terraform providers support routing policy label attachment natively. We will update this pattern as soon as provider support becomes available.
-
-After deployment, attach routing policy labels to VPC attachments using the AWS CLI:
-
-```bash
-# Get the Core Network ID and VPC attachment IDs
-CORE_NETWORK_ID=$(terraform output -json cloud_wan | jq -r '.core_network')
-VPC_IRELAND_PROD=$(terraform output -json vpcs | jq -r '.ireland.attachment_ids.prod')
-VPC_IRELAND_DEV=$(terraform output -json vpcs | jq -r '.ireland.attachment_ids.dev')
-VPC_NVIRGINIA_PROD=$(terraform output -json vpcs | jq -r '.nvirginia.attachment_ids.prod')
-VPC_NVIRGINIA_DEV=$(terraform output -json vpcs | jq -r '.nvirginia.attachment_ids.dev')
-
-# Attach routing policy labels
-aws networkmanager put-attachment-routing-policy-label \
-  --core-network-id $CORE_NETWORK_ID \
-  --attachment-id $VPC_IRELAND_PROD \
-  --routing-policy-label vpcAttachments \
-  --region eu-west-1
-
-aws networkmanager put-attachment-routing-policy-label \
-  --core-network-id $CORE_NETWORK_ID \
-  --attachment-id $VPC_IRELAND_DEV \
-  --routing-policy-label vpcAttachments \
-  --region eu-west-1
-
-aws networkmanager put-attachment-routing-policy-label \
-  --core-network-id $CORE_NETWORK_ID \
-  --attachment-id $VPC_NVIRGINIA_PROD \
-  --routing-policy-label vpcAttachments \
-  --region us-east-1
-
-aws networkmanager put-attachment-routing-policy-label \
-  --core-network-id $CORE_NETWORK_ID \
-  --attachment-id $VPC_NVIRGINIA_DEV \
-  --routing-policy-label vpcAttachments \
-  --region us-east-1
-```
-
 > **Note**: EC2 instances will be deployed in all the Availability Zones configured for each VPC. Keep this in mind when testing this environment from a cost perspective - for production environments, we recommend the use of at least 2 AZs for high-availability.
 
 ## Cleanup
@@ -96,14 +56,17 @@ After successfully deploying this pattern:
 | Name | Version |
 |------|---------|
 | <a name="requirement_terraform"></a> [terraform](#requirement\_terraform) | >= 1.3.0 |
-| <a name="requirement_aws"></a> [aws](#requirement\_aws) | >= 6.27.0 |
+| <a name="requirement_aws"></a> [aws](#requirement\_aws) | >= 6.34.0 |
 | <a name="requirement_awscc"></a> [awscc](#requirement\_awscc) | >= 1.0.0 |
 
 ## Providers
 
 | Name | Version |
 |------|---------|
-| <a name="provider_awscc"></a> [awscc](#provider\_awscc) | 1.67.0 |
+| <a name="provider_aws"></a> [aws](#provider\_aws) | 6.34.0 |
+| <a name="provider_aws.awsireland"></a> [aws.awsireland](#provider\_aws.awsireland) | 6.34.0 |
+| <a name="provider_aws.awsnvirginia"></a> [aws.awsnvirginia](#provider\_aws.awsnvirginia) | 6.34.0 |
+| <a name="provider_awscc"></a> [awscc](#provider\_awscc) | 1.73.0 |
 
 ## Modules
 
@@ -124,8 +87,11 @@ After successfully deploying this pattern:
 
 | Name | Type |
 |------|------|
+| [aws_networkmanager_attachment_routing_policy_label.ireland_routing_policy_label](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/networkmanager_attachment_routing_policy_label) | resource |
+| [aws_networkmanager_attachment_routing_policy_label.nvirginia_routing_policy_label](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/networkmanager_attachment_routing_policy_label) | resource |
 | [awscc_networkmanager_core_network.core_network](https://registry.terraform.io/providers/hashicorp/awscc/latest/docs/resources/networkmanager_core_network) | resource |
 | [awscc_networkmanager_global_network.global_network](https://registry.terraform.io/providers/hashicorp/awscc/latest/docs/resources/networkmanager_global_network) | resource |
+| [aws_networkmanager_core_network_policy_document.policy_document](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/networkmanager_core_network_policy_document) | data source |
 
 ## Inputs
 

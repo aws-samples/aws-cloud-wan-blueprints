@@ -16,10 +16,13 @@ locals {
   }
 }
 
+
 data "aws_networkmanager_core_network_policy_document" "policy" {
+  version = "2025.11"
+
   core_network_configuration {
     vpn_ecmp_support = false
-    asn_ranges       = ["64520-65525"]
+    asn_ranges       = ["64520-64525"]
 
     dynamic "edge_locations" {
       for_each = var.aws_regions

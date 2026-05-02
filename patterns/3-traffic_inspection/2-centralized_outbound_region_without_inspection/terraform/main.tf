@@ -5,29 +5,29 @@
 
 # ---------- AWS CLOUD WAN RESOURCES ----------
 # Global Network
-resource "aws_networkmanager_global_network" "global_network" {
-  provider = aws.awsnvirginia
+resource "awscc_networkmanager_global_network" "global_network" {
+  provider = awscc.awsccnvirginia
 
   description = "Global Network - ${var.identifier}"
 
-  tags = {
-    Name = "Global Network - ${var.identifier}"
-  }
+  tags = [{
+    key   = "Name"
+    value = "Global Network - ${var.identifier}"
+  }]
 }
 
 # Core Network
-resource "aws_networkmanager_core_network" "core_network" {
-  provider = aws.awsnvirginia
+resource "awscc_networkmanager_core_network" "core_network" {
+  provider = awscc.awsccnvirginia
 
+  global_network_id = awscc_networkmanager_global_network.global_network.id
   description       = "Core Network - ${var.identifier}"
-  global_network_id = aws_networkmanager_global_network.global_network.id
+  policy_document   = data.aws_networkmanager_core_network_policy_document.policy.json
 
-  create_base_policy   = true
-  base_policy_document = data.aws_networkmanager_core_network_policy_document.policy.json
-
-  tags = {
-    Name = "Core Network - ${var.identifier}"
-  }
+  tags = [{
+    key   = "Name"
+    value = "Core Network - ${var.identifier}"
+  }]
 }
 
 # ---------- RESOURCES IN IRELAND ----------
@@ -35,7 +35,7 @@ resource "aws_networkmanager_core_network" "core_network" {
 module "ireland_spoke_vpcs" {
   for_each  = var.ireland_spoke_vpcs
   source    = "aws-ia/vpc/aws"
-  version   = "= 4.4.2"
+  version   = "= 4.7.3"
   providers = { aws = aws.awsireland }
 
   name       = each.key
@@ -43,8 +43,8 @@ module "ireland_spoke_vpcs" {
   az_count   = each.value.number_azs
 
   core_network = {
-    id  = aws_networkmanager_core_network.core_network.id
-    arn = aws_networkmanager_core_network.core_network.arn
+    id  = awscc_networkmanager_core_network.core_network.core_network_id
+    arn = awscc_networkmanager_core_network.core_network.core_network_arn
   }
   core_network_routes = {
     workload = "0.0.0.0/0"
@@ -67,10 +67,10 @@ module "ireland_spoke_vpcs" {
 # Inspection VPC - definition in variables.tf
 module "ireland_inspection_vpc" {
   source    = "aws-ia/cloudwan/aws"
-  version   = "3.2.0"
+  version   = "3.4.0"
   providers = { aws = aws.awsireland }
 
-  core_network_arn = aws_networkmanager_core_network.core_network.arn
+  core_network_arn = awscc_networkmanager_core_network.core_network.core_network_arn
 
   ipv4_network_definition = "10.0.0.0/8"
   central_vpcs = {
@@ -127,7 +127,7 @@ module "ireland_compute" {
 module "nvirginia_spoke_vpcs" {
   for_each  = var.nvirginia_spoke_vpcs
   source    = "aws-ia/vpc/aws"
-  version   = "= 4.4.2"
+  version   = "= 4.7.3"
   providers = { aws = aws.awsnvirginia }
 
   name       = each.key
@@ -135,8 +135,8 @@ module "nvirginia_spoke_vpcs" {
   az_count   = each.value.number_azs
 
   core_network = {
-    id  = aws_networkmanager_core_network.core_network.id
-    arn = aws_networkmanager_core_network.core_network.arn
+    id  = awscc_networkmanager_core_network.core_network.core_network_id
+    arn = awscc_networkmanager_core_network.core_network.core_network_arn
   }
   core_network_routes = {
     workload = "0.0.0.0/0"
@@ -159,10 +159,10 @@ module "nvirginia_spoke_vpcs" {
 # Inspection VPC - definition in variables.tf
 module "nvirginia_inspection_vpc" {
   source    = "aws-ia/cloudwan/aws"
-  version   = "3.2.0"
+  version   = "3.4.0"
   providers = { aws = aws.awsnvirginia }
 
-  core_network_arn = aws_networkmanager_core_network.core_network.arn
+  core_network_arn = awscc_networkmanager_core_network.core_network.core_network_arn
 
   ipv4_network_definition = "10.0.0.0/8"
   central_vpcs = {
@@ -219,7 +219,7 @@ module "nvirginia_compute" {
 module "sydney_spoke_vpcs" {
   for_each  = var.sydney_spoke_vpcs
   source    = "aws-ia/vpc/aws"
-  version   = "= 4.4.2"
+  version   = "= 4.7.3"
   providers = { aws = aws.awssydney }
 
   name       = each.key
@@ -227,8 +227,8 @@ module "sydney_spoke_vpcs" {
   az_count   = each.value.number_azs
 
   core_network = {
-    id  = aws_networkmanager_core_network.core_network.id
-    arn = aws_networkmanager_core_network.core_network.arn
+    id  = awscc_networkmanager_core_network.core_network.core_network_id
+    arn = awscc_networkmanager_core_network.core_network.core_network_arn
   }
   core_network_routes = {
     workload = "0.0.0.0/0"
@@ -251,10 +251,10 @@ module "sydney_spoke_vpcs" {
 # Inspection VPC - definition in variables.tf
 module "sydney_inspection_vpc" {
   source    = "aws-ia/cloudwan/aws"
-  version   = "3.2.0"
+  version   = "3.4.0"
   providers = { aws = aws.awssydney }
 
-  core_network_arn = aws_networkmanager_core_network.core_network.arn
+  core_network_arn = awscc_networkmanager_core_network.core_network.core_network_arn
 
   ipv4_network_definition = "10.0.0.0/8"
   central_vpcs = {
@@ -311,7 +311,7 @@ module "sydney_compute" {
 module "london_spoke_vpcs" {
   for_each  = var.london_spoke_vpcs
   source    = "aws-ia/vpc/aws"
-  version   = "= 4.4.2"
+  version   = "= 4.7.3"
   providers = { aws = aws.awslondon }
 
   name       = each.key
@@ -319,8 +319,8 @@ module "london_spoke_vpcs" {
   az_count   = each.value.number_azs
 
   core_network = {
-    id  = aws_networkmanager_core_network.core_network.id
-    arn = aws_networkmanager_core_network.core_network.arn
+    id  = awscc_networkmanager_core_network.core_network.core_network_id
+    arn = awscc_networkmanager_core_network.core_network.core_network_arn
   }
   core_network_routes = {
     workload = "0.0.0.0/0"

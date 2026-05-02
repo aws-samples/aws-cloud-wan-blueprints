@@ -204,7 +204,7 @@ Resources:
     - 'ProdInstance${AvailabilityZone}':
         Type: AWS::EC2::Instance
         Properties:
-          InstanceType: t3.micro
+          InstanceType: t2.micro
           SecurityGroupIds:
             - !Ref VPCProdInstanceSecurityGroup
           SubnetId: !Ref
@@ -404,7 +404,7 @@ Resources:
     - 'DevInstance${AvailabilityZone}':
         Type: AWS::EC2::Instance
         Properties:
-          InstanceType: t3.micro
+          InstanceType: t2.micro
           SecurityGroupIds:
             - !Ref VPCDevInstanceSecurityGroup
           SubnetId: !Ref

@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: 2010-09-09
-Description: AWS Cloud WAN Summarization (Prefix list)
+Description: AWS Cloud WAN Summarization (Prefix lists)
 Transform: 'AWS::LanguageExtensions'
 
 Parameters:
@@ -7,28 +7,46 @@ Parameters:
     Type: String
 
 Resources:
-    PrefixList:
+    NVirginiaPrefixList:
       Type: AWS::EC2::PrefixList
       Properties:
         AddressFamily: IPv4
         Entries: 
           - Cidr: 10.10.0.0/24
             Description: prod-us-east-1
-          - Cidr: 10.0.0.0/24
-            Description: prod-eu-west-1
           - Cidr: 10.10.1.0/24
             Description: dev-us-east-1
-          - Cidr: 10.0.1.0/24
-            Description: dev-eu-west-1
-        MaxEntries: 4
+        MaxEntries: 2
         PrefixListName: !Join
           - '-'
-          - - prefix-list
+          - - nvirginia-prefix-list
             - !Ref AWS::StackName
-    
-    PrefixListAssociation:
+
+    NVirginiaPrefixListAssociation:
       Type: AWS::NetworkManager::CoreNetworkPrefixListAssociation
       Properties:
         CoreNetworkId: !Ref CoreNetworkId
-        PrefixListAlias: ipv4routes
-        PrefixListArn: !GetAtt PrefixList.Arn
+        PrefixListAlias: nvirginiaipv4routes
+        PrefixListArn: !GetAtt NVirginiaPrefixList.Arn
+
+    IrelandPrefixList:
+      Type: AWS::EC2::PrefixList
+      Properties:
+        AddressFamily: IPv4
+        Entries: 
+          - Cidr: 10.0.0.0/24
+            Description: prod-eu-west-1
+          - Cidr: 10.0.1.0/24
+            Description: dev-eu-west-1
+        MaxEntries: 2
+        PrefixListName: !Join
+          - '-'
+          - - ireland-prefix-list
+            - !Ref AWS::StackName
+
+    IrelandPrefixListAssociation:
+      Type: AWS::NetworkManager::CoreNetworkPrefixListAssociation
+      Properties:
+        CoreNetworkId: !Ref CoreNetworkId
+        PrefixListAlias: irelandipv4routes
+        PrefixListArn: !GetAtt IrelandPrefixList.Arn

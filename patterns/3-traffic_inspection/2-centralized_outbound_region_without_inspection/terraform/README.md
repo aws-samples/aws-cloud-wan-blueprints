@@ -52,14 +52,15 @@ After successfully deploying this pattern:
 | Name | Version |
 |------|---------|
 | <a name="requirement_terraform"></a> [terraform](#requirement\_terraform) | >= 1.3.0 |
-| <a name="requirement_aws"></a> [aws](#requirement\_aws) | >= 5.67.0 |
+| <a name="requirement_aws"></a> [aws](#requirement\_aws) | >= 6.27.0 |
+| <a name="requirement_awscc"></a> [awscc](#requirement\_awscc) | >= 1.0.0 |
 
 ## Providers
 
 | Name | Version |
 |------|---------|
-| <a name="provider_aws"></a> [aws](#provider\_aws) | >= 5.67.0 |
-| <a name="provider_aws.awsnvirginia"></a> [aws.awsnvirginia](#provider\_aws.awsnvirginia) | >= 5.67.0 |
+| <a name="provider_aws"></a> [aws](#provider\_aws) | 6.31.0 |
+| <a name="provider_awscc.awsccnvirginia"></a> [awscc.awsccnvirginia](#provider\_awscc.awsccnvirginia) | 1.70.0 |
 
 ## Modules
 
@@ -67,25 +68,25 @@ After successfully deploying this pattern:
 |------|--------|---------|
 | <a name="module_ireland_anfw_policy"></a> [ireland\_anfw\_policy](#module\_ireland\_anfw\_policy) | ../../../tf_modules/firewall_policy | n/a |
 | <a name="module_ireland_compute"></a> [ireland\_compute](#module\_ireland\_compute) | ../../../tf_modules/compute | n/a |
-| <a name="module_ireland_inspection_vpc"></a> [ireland\_inspection\_vpc](#module\_ireland\_inspection\_vpc) | aws-ia/cloudwan/aws | 3.2.0 |
-| <a name="module_ireland_spoke_vpcs"></a> [ireland\_spoke\_vpcs](#module\_ireland\_spoke\_vpcs) | aws-ia/vpc/aws | = 4.4.2 |
+| <a name="module_ireland_inspection_vpc"></a> [ireland\_inspection\_vpc](#module\_ireland\_inspection\_vpc) | aws-ia/cloudwan/aws | 3.4.0 |
+| <a name="module_ireland_spoke_vpcs"></a> [ireland\_spoke\_vpcs](#module\_ireland\_spoke\_vpcs) | aws-ia/vpc/aws | = 4.7.3 |
 | <a name="module_london_compute"></a> [london\_compute](#module\_london\_compute) | ../../../tf_modules/compute | n/a |
-| <a name="module_london_spoke_vpcs"></a> [london\_spoke\_vpcs](#module\_london\_spoke\_vpcs) | aws-ia/vpc/aws | = 4.4.2 |
+| <a name="module_london_spoke_vpcs"></a> [london\_spoke\_vpcs](#module\_london\_spoke\_vpcs) | aws-ia/vpc/aws | = 4.7.3 |
 | <a name="module_nvirginia_anfw_policy"></a> [nvirginia\_anfw\_policy](#module\_nvirginia\_anfw\_policy) | ../../../tf_modules/firewall_policy | n/a |
 | <a name="module_nvirginia_compute"></a> [nvirginia\_compute](#module\_nvirginia\_compute) | ../../../tf_modules/compute | n/a |
-| <a name="module_nvirginia_inspection_vpc"></a> [nvirginia\_inspection\_vpc](#module\_nvirginia\_inspection\_vpc) | aws-ia/cloudwan/aws | 3.2.0 |
-| <a name="module_nvirginia_spoke_vpcs"></a> [nvirginia\_spoke\_vpcs](#module\_nvirginia\_spoke\_vpcs) | aws-ia/vpc/aws | = 4.4.2 |
+| <a name="module_nvirginia_inspection_vpc"></a> [nvirginia\_inspection\_vpc](#module\_nvirginia\_inspection\_vpc) | aws-ia/cloudwan/aws | 3.4.0 |
+| <a name="module_nvirginia_spoke_vpcs"></a> [nvirginia\_spoke\_vpcs](#module\_nvirginia\_spoke\_vpcs) | aws-ia/vpc/aws | = 4.7.3 |
 | <a name="module_sydney_anfw_policy"></a> [sydney\_anfw\_policy](#module\_sydney\_anfw\_policy) | ../../../tf_modules/firewall_policy | n/a |
 | <a name="module_sydney_compute"></a> [sydney\_compute](#module\_sydney\_compute) | ../../../tf_modules/compute | n/a |
-| <a name="module_sydney_inspection_vpc"></a> [sydney\_inspection\_vpc](#module\_sydney\_inspection\_vpc) | aws-ia/cloudwan/aws | 3.2.0 |
-| <a name="module_sydney_spoke_vpcs"></a> [sydney\_spoke\_vpcs](#module\_sydney\_spoke\_vpcs) | aws-ia/vpc/aws | = 4.4.2 |
+| <a name="module_sydney_inspection_vpc"></a> [sydney\_inspection\_vpc](#module\_sydney\_inspection\_vpc) | aws-ia/cloudwan/aws | 3.4.0 |
+| <a name="module_sydney_spoke_vpcs"></a> [sydney\_spoke\_vpcs](#module\_sydney\_spoke\_vpcs) | aws-ia/vpc/aws | = 4.7.3 |
 
 ## Resources
 
 | Name | Type |
 |------|------|
-| [aws_networkmanager_core_network.core_network](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/networkmanager_core_network) | resource |
-| [aws_networkmanager_global_network.global_network](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/networkmanager_global_network) | resource |
+| [awscc_networkmanager_core_network.core_network](https://registry.terraform.io/providers/hashicorp/awscc/latest/docs/resources/networkmanager_core_network) | resource |
+| [awscc_networkmanager_global_network.global_network](https://registry.terraform.io/providers/hashicorp/awscc/latest/docs/resources/networkmanager_global_network) | resource |
 | [aws_networkmanager_core_network_policy_document.policy](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/networkmanager_core_network_policy_document) | data source |
 
 ## Inputs

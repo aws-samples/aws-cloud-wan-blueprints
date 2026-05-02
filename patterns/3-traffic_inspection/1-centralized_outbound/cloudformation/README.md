@@ -26,8 +26,9 @@ cd patterns/3-traffic_inspection/1-centralized_outbound/cloudformation
 make deploy
 
 # Or deploy step-by-step:
-make deploy-cloudwan    # Deploy Core Network first
-make deploy-workloads   # Then deploy workloads in all regions
+make deploy-base-policy  # Deploy base Core Network policy first
+make deploy-workloads    # Then deploy workloads in all regions
+make update-cloudwan     # Update Core Network with full policy (segment-actions)
 ```
 
 > **Note**: EC2 instances will be deployed in all the Availability Zones configured for each VPC. Keep this in mind when testing this environment from a cost perspective - for production environments, we recommend the use of at least 2 AZs for high-availability.

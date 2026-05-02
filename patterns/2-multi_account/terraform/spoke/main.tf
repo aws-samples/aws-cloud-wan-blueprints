@@ -4,16 +4,35 @@
 # --- patterns/2-multi_account/terraform/spoke/main.tf ---
 
 # ---------- RAM SHARE ACCEPTANCE ----------
-# Accepting resource share from Networking Account
+# Check the RAM resource share status (visible in both same-org and cross-org scenarios)
+data "aws_ram_resource_share" "networking_share_check" {
+  provider = aws.awsnvirginia
+
+  resource_owner = "OTHER-ACCOUNTS"
+  name           = "resource-share-${var.identifier}"
+}
+
+# Accept the resource share only if not auto-accepted (cross-org scenario)
 resource "aws_ram_resource_share_accepter" "accept_networking_share" {
+  count    = data.aws_ram_resource_share.networking_share_check.status == "ACTIVE" ? 0 : 1
   provider = aws.awsnvirginia
 
   share_arn = var.resource_share_arn
 }
 
+# Retrieve the RAM resource share after acceptance (if needed) to get the shared resources
+data "aws_ram_resource_share" "networking_share" {
+  provider = aws.awsnvirginia
+
+  resource_owner = "OTHER-ACCOUNTS"
+  name           = "resource-share-${var.identifier}"
+
+  depends_on = [aws_ram_resource_share_accepter.accept_networking_share]
+}
+
 # Local variable - obtaining Core Network ARN from resource share
 locals {
-  core_network_arn = aws_ram_resource_share_accepter.accept_networking_share.resources[0]
+  core_network_arn = [for r in data.aws_ram_resource_share.networking_share.resource_arns : r if startswith(r, "arn:aws:networkmanager:")][0]
 }
 
 # ---------- RESOURCES IN IRELAND ----------
@@ -21,7 +40,7 @@ locals {
 module "ireland_spoke_vpcs" {
   for_each  = var.ireland_spoke_vpcs
   source    = "aws-ia/vpc/aws"
-  version   = "= 4.5.0"
+  version   = "= 4.7.3"
   providers = { aws = aws.awsireland }
 
   name       = each.key
@@ -67,7 +86,7 @@ module "ireland_compute" {
 module "nvirginia_spoke_vpcs" {
   for_each  = var.nvirginia_spoke_vpcs
   source    = "aws-ia/vpc/aws"
-  version   = "= 4.5.0"
+  version   = "= 4.7.3"
   providers = { aws = aws.awsnvirginia }
 
   name       = each.key

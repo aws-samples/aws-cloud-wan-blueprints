@@ -227,10 +227,12 @@ This patterns shows how you can create protocol-specific segments by filtering I
       "require-attachment-acceptance": false
     },
     {
-      "name": "ipv4only"
+      "name": "ipv4only",
+      "require-attachment-acceptance": false
     },
     {
-      "name": "ipv6only"
+      "name": "ipv6only",
+      "require-attachment-acceptance": false
     }
   ],
   "attachment-policies": [
@@ -259,15 +261,25 @@ This patterns shows how you can create protocol-specific segments by filtering I
       "action": "share",
       "mode": "attachment-route",
       "segment": "ipv4only",
-      "share-with": ["production", "development"],
-      "routing-policy-names": ["filterIpv6"]
+      "share-with": [
+        "production",
+        "development"
+      ],
+      "routing-policy-names": [
+        "filterIpv6"
+      ]
     },
     {
       "action": "share",
       "mode": "attachment-route",
       "segment": "ipv6only",
-      "share-with": ["production", "development"],
-      "routing-policy-names": ["filterIpv4"]
+      "share-with": [
+        "production",
+        "development"
+      ],
+      "routing-policy-names": [
+        "filterIpv4"
+      ]
     }
   ],
   "routing-policies": [
@@ -283,6 +295,10 @@ This patterns shows how you can create protocol-specific segments by filtering I
             "match-conditions": [
               {
                 "type": "prefix-in-cidr",
+                "value": "0.0.0.0/0"
+              },
+              {
+                "type": "prefix-equals",
                 "value": "0.0.0.0/0"
               }
             ],
@@ -306,6 +322,10 @@ This patterns shows how you can create protocol-specific segments by filtering I
             "match-conditions": [
               {
                 "type": "prefix-in-cidr",
+                "value": "::/0"
+              },
+              {
+                "type": "prefix-equals",
                 "value": "::/0"
               }
             ],
@@ -513,6 +533,10 @@ This pattern demonstrates how routing policies can be applied at the attachment 
             "match-conditions": [
               {
                 "type": "prefix-in-cidr",
+                "value": "0.0.0.0/0"
+              },
+              {
+                "type": "prefix-equals",
                 "value": "0.0.0.0/0"
               }
             ],
@@ -722,18 +746,7 @@ route-map TEST-ROUTES permit 10
               {
                 "type": "prefix-in-cidr",
                 "value": "0.0.0.0/0"
-              }
-            ],
-            "condition-logic": "or",
-            "action": {
-              "type": "drop"
-            }
-          }
-        },
-        {
-          "rule-number": 300,
-          "rule-definition": {
-            "match-conditions": [
+              },
               {
                 "type": "prefix-equals",
                 "value": "0.0.0.0/0"
@@ -774,18 +787,7 @@ route-map TEST-ROUTES permit 10
               {
                 "type": "prefix-in-cidr",
                 "value": "0.0.0.0/0"
-              }
-            ],
-            "condition-logic": "or",
-            "action": {
-              "type": "drop"
-            }
-          }
-        },
-        {
-          "rule-number": 300,
-          "rule-definition": {
-            "match-conditions": [
+              },
               {
                 "type": "prefix-equals",
                 "value": "0.0.0.0/0"
@@ -1240,7 +1242,7 @@ This pattern demonstrates how to use Cloud WAN's route summarization capability 
 |-----------|---------------|
 | **Regions** | us-east-1, eu-west-1 |
 | **Segments** | `production`, `development`, `hybrid` |
-| **Routing Policy** | Summarize IPv4 routes to 10.0.0.0/8 |
+| **Routing Policies** | Summarize IPv4 routes (per-region for DX, combined for VPN/Connect) |
 | **Policy Direction** | `outbound` (to hybrid attachments) |
 
 ### How It Works
@@ -1249,30 +1251,39 @@ This pattern demonstrates how to use Cloud WAN's route summarization capability 
 
 - Multiple VPCs across regions with IPv4 CIDR blocks (10.0.0.0/24, 10.0.1.0/24, 10.10.0.0/24, 10.10.1.0/24)
 - VPCs are dual-stack with both IPv4 and IPv6 addresses
-- Goal: Advertise a single summary route (10.0.0.0/8) to on-premises instead of individual VPC CIDRs
+- Goal: Advertise summary routes to on-premises instead of individual VPC CIDRs
 
 **Solution**:
 
-1. Create a managed prefix list containing all VPC IPv4 CIDR blocks
-2. Associate the prefix list with the Core Network using alias `ipv4routes`
-3. Create routing policy `summarizeIpv4Routes` that:
-   - Matches routes in the prefix list
-   - Summarizes them to 10.0.0.0/8
-4. Apply policy to hybrid attachments using routing policy label `hybridAttachment`
+1. Create two managed prefix lists: `nvirginiaipv4routes` (N. Virginia CIDRs) and `irelandipv4routes` (Ireland CIDRs)
+2. Associate both prefix lists with the Core Network
+3. Create routing policies:
+   - `summarizeIpv4Routes`: Matches both prefix lists, summarizes to 10.0.0.0/8 (for VPN and Connect attachments)
+   - `summarizeNVirginiaIpv4Routes`: Matches N. Virginia prefix list, summarizes to 10.10.0.0/16 (for DX attachments)
+   - `summarizeIrelandIpv4Routes`: Matches Ireland prefix list, summarizes to 10.0.0.0/16 (for DX attachments)
+4. Apply policies to hybrid attachments using routing policy labels: `vpnAttachment`, `connectAttachment`, `dxAttachment`
 5. IPv6 routes are advertised without summarization
+
+**Why different policies for VPN/Connect vs Direct Connect Gateway?**
+
+VPN and Connect attachments connect to a single CNE, so all AWS routes can be safely summarized into a single supernet (10.0.0.0/8). For Direct Connect Gateway attachments, the DXGW is attached to all CNEs; if we advertised the same 10.0.0.0/8 supernet from every CNE, on-premises routers would see equal-cost paths and could route traffic into any CNE, causing undesired cross-region traffic. Instead, each CNE advertises only its region's supernet (e.g., 10.10.0.0/16 from us-east-1, 10.0.0.0/16 from eu-west-1), ensuring traffic enters Cloud WAN through the closest CNE.
 
 ### Traffic Flow
 
-| Route Type | Without Summarization | With Summarization | Result |
-|------------|----------------------|-------------------|--------|
-| **IPv4 Routes** | 10.0.0.0/24, 10.0.1.0/24, 10.10.0.0/24, 10.10.1.0/24 | 10.0.0.0/8 | ✅ Summarized |
-| **IPv6 Routes** | Individual VPC IPv6 CIDRs | Individual VPC IPv6 CIDRs | ℹ️ Not summarized |
+| Route Type | Without Summarization | With Summarization (VPN/Connect) | With Summarization (DX) |
+|------------|----------------------|----------------------------------|------------------------|
+| **IPv4 Routes (N. Virginia)** | 10.10.0.0/24, 10.10.1.0/24 | 10.0.0.0/8 | 10.10.0.0/16 |
+| **IPv4 Routes (Ireland)** | 10.0.0.0/24, 10.0.1.0/24 | 10.0.0.0/8 | 10.0.0.0/16 |
+| **IPv6 Routes** | Individual VPC IPv6 CIDRs | Individual VPC IPv6 CIDRs | Individual VPC IPv6 CIDRs |
 
 ### Important Notes
 
-1. **Prefix List Association Region**: The prefix list association MUST be created in `us-west-2` (Cloud WAN's home region), regardless of where your Core Network edge locations are deployed.
+1. **Prefix List Region**: The prefix lists MUST be created in `us-west-2` (Cloud WAN's home region), regardless of where your Core Network edge locations are deployed.
 
-2. **Routing Policy Label**: After deployment, hybrid attachments (Site-to-Site VPN, Connect, or Direct Connect Gateway) MUST have the routing policy label `hybridAttachment` added for the summarization policy to be applied.
+2. **Routing Policy Labels**: After deployment, hybrid attachments MUST have the appropriate routing policy label added:
+   - Site-to-Site VPN: `vpnAttachment`
+   - Connect attachments: `connectAttachment`
+   - Direct Connect Gateway: `dxAttachment`
 
 3. **Dual-Stack Behavior**: This pattern demonstrates summarization for IPv4 routes only. IPv6 routes are advertised without summarization.
 
@@ -1280,6 +1291,8 @@ This pattern demonstrates how to use Cloud WAN's route summarization capability 
    - Site-to-Site VPN
    - Connect attachments
    - Direct Connect Gateway
+
+5. **DXGW Summarization**: Direct Connect Gateway attachments require per-region summarization. Because a DXGW is attached to all CNEs, advertising a single supernet (e.g., 10.0.0.0/8) from every CNE would cause on-premises routers to see equal-cost paths, potentially routing traffic into any CNE and causing cross-region traffic. Per-region supernets ensure traffic enters through the local CNE.
 
 ### Implementation
 
@@ -1389,12 +1402,41 @@ This pattern demonstrates how to use Cloud WAN's route summarization capability 
       "conditions": [
         {
           "type": "routing-policy-label",
-          "value": "hybridAttachment"
+          "value": "vpnAttachment"
         }
       ],
       "action": {
         "associate-routing-policies": [
           "summarizeIpv4Routes"
+        ]
+      }
+    },
+    {
+      "rule-number": 200,
+      "conditions": [
+        {
+          "type": "routing-policy-label",
+          "value": "connectAttachment"
+        }
+      ],
+      "action": {
+        "associate-routing-policies": [
+          "summarizeIpv4Routes"
+        ]
+      }
+    },
+    {
+      "rule-number": 300,
+      "conditions": [
+        {
+          "type": "routing-policy-label",
+          "value": "dxAttachment"
+        }
+      ],
+      "action": {
+        "associate-routing-policies": [
+          "summarizeNVirginiaIpv4Routes",
+          "summarizeIrelandIpv4Routes"
         ]
       }
     }
@@ -1411,13 +1453,63 @@ This pattern demonstrates how to use Cloud WAN's route summarization capability 
             "match-conditions": [
               {
                 "type": "prefix-in-prefix-list",
-                "value": "ipv4routes"
+                "value": "nvirginiaipv4routes"
+              },
+              {
+                "type": "prefix-in-prefix-list",
+                "value": "irelandipv4routes"
               }
             ],
             "condition-logic": "or",
             "action": {
               "type": "summarize",
               "value": "10.0.0.0/8"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "routing-policy-name": "summarizeNVirginiaIpv4Routes",
+      "routing-policy-direction": "outbound",
+      "routing-policy-number": 200,
+      "routing-policy-rules": [
+        {
+          "rule-number": 100,
+          "rule-definition": {
+            "match-conditions": [
+              {
+                "type": "prefix-in-prefix-list",
+                "value": "nvirginiaipv4routes"
+              }
+            ],
+            "condition-logic": "or",
+            "action": {
+              "type": "summarize",
+              "value": "10.10.0.0/16"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "routing-policy-name": "summarizeIrelandIpv4Routes",
+      "routing-policy-direction": "outbound",
+      "routing-policy-number": 300,
+      "routing-policy-rules": [
+        {
+          "rule-number": 100,
+          "rule-definition": {
+            "match-conditions": [
+              {
+                "type": "prefix-in-prefix-list",
+                "value": "irelandipv4routes"
+              }
+            ],
+            "condition-logic": "or",
+            "action": {
+              "type": "summarize",
+              "value": "10.0.0.0/16"
             }
           }
         }
@@ -1561,18 +1653,7 @@ When migrating from Transit Gateway-based architectures to Cloud WAN, you may ne
               {
                 "type": "prefix-in-cidr",
                 "value": "0.0.0.0/0"
-              }
-            ],
-            "condition-logic": "or",
-            "action": {
-              "type": "drop"
-            }
-          }
-        },
-        {
-          "rule-number": 200,
-          "rule-definition": {
-            "match-conditions": [
+              },
               {
                 "type": "prefix-equals",
                 "value": "0.0.0.0/0"

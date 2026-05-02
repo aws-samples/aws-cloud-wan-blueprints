@@ -8,7 +8,11 @@ terraform {
   required_providers {
     aws = {
       source  = "hashicorp/aws"
-      version = ">= 5.67.0"
+      version = ">= 6.27.0"
+    }
+    awscc = {
+      source  = "hashicorp/awscc"
+      version = ">= 1.0.0"
     }
   }
 }
@@ -23,6 +27,11 @@ provider "aws" {
 provider "aws" {
   region = var.aws_regions.nvirginia
   alias  = "awsnvirginia"
+}
+
+provider "awscc" {
+  region = var.aws_regions.nvirginia
+  alias  = "awsccnvirginia"
 }
 
 # Provider definitios for Sydney Region
