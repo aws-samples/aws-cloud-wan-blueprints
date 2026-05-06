@@ -1,0 +1,102 @@
+{
+  "version": "2025.11",
+  "core-network-configuration": {
+    "vpn-ecmp-support": true,
+    "asn-ranges": ["65000-65003"],
+    "edge-locations": [
+      { "location": "us-east-1" },
+      { "location": "eu-west-1" }
+    ]
+  },
+  "segments": [
+    {
+      "name": "production",
+      "require-attachment-acceptance": false
+    },
+    {
+      "name": "hybrid",
+      "require-attachment-acceptance": false
+    }
+  ],
+  "network-function-groups": [],
+  "segment-actions": [
+    {
+      "action": "share",
+      "mode": "attachment-route",
+      "segment": "hybrid",
+      "share-with": ["production"]
+    },
+    {
+      "action": "share",
+      "mode": "attachment-route",
+      "segment": "production",
+      "share-with": ["hybrid"]
+    }
+  ],
+  "attachment-policies": [
+    {
+      "rule-number": 100,
+      "condition-logic": "or",
+      "conditions": [
+        {
+          "type": "tag-value",
+          "operator": "equals",
+          "key": "segment",
+          "value": "production"
+        }
+      ],
+      "action": {
+        "association-method": "constant",
+        "segment": "production"
+      }
+    },
+    {
+      "rule-number": 200,
+      "condition-logic": "or",
+      "conditions": [
+        {
+          "type": "tag-value",
+          "operator": "equals",
+          "key": "segment",
+          "value": "hybrid"
+        }
+      ],
+      "action": {
+        "association-method": "constant",
+        "segment": "hybrid"
+      }
+    }
+  ],
+  "attachment-routing-policy-rules": [
+    {
+      "rule-number": 100,
+      "description": "Apply inbound drop policy to hybrid attachments",
+      "conditions": [
+        { "type": "routing-policy-label", "value": "hybridRouteFiltering" }
+      ],
+      "action": {
+        "associate-routing-policies": ["inboundDropDangerousRoutes"]
+      }
+    }
+  ],
+  "routing-policies": [
+    {
+      "routing-policy-name": "inboundDropDangerousRoutes",
+      "routing-policy-description": "Drop dangerous routes from on-premises: default route and prefixes that overlap with VPC CIDRs",
+      "routing-policy-direction": "inbound",
+      "routing-policy-number": 100,
+      "routing-policy-rules": [
+        {
+          "rule-number": 100,
+          "rule-definition": {
+            "match-conditions": [
+              { "type": "prefix-in-prefix-list", "value": "dangerousPrefixes" }
+            ],
+            "condition-logic": "or",
+            "action": { "type": "drop" }
+          }
+        }
+      ]
+    }
+  ]
+}

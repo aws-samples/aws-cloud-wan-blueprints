@@ -1,0 +1,139 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: AWS Cloud WAN Inbound Route Filtering with Prefix Lists
+
+Parameters:
+  DxGatewayAsn:
+    Type: Number
+    Default: 64512
+    Description: ASN for the Direct Connect Gateway.
+
+Resources:
+  # ---------- CLOUD WAN ----------
+  GlobalNetwork:
+    Type: AWS::NetworkManager::GlobalNetwork
+    Properties:
+      Description: Global Network - Inbound Route Filtering
+      Tags:
+        - Key: Name
+          Value: global-network-inbound-route-filtering
+
+  CoreNetwork:
+    Type: AWS::NetworkManager::CoreNetwork
+    Properties:
+      Description: Core Network - Inbound Route Filtering
+      GlobalNetworkId: !Ref GlobalNetwork
+      Tags:
+        - Key: Name
+          Value: core-network-inbound-route-filtering
+      PolicyDocument:
+        version: "2025.11"
+        core-network-configuration:
+          vpn-ecmp-support: true
+          asn-ranges:
+            - 65000-65003
+          edge-locations:
+            - location: us-east-1
+            - location: eu-west-1
+        segments:
+          - name: production
+            require-attachment-acceptance: false
+          - name: hybrid
+            require-attachment-acceptance: false
+        network-function-groups: []
+        segment-actions:
+          - action: share
+            mode: attachment-route
+            segment: hybrid
+            share-with:
+              - production
+          - action: share
+            mode: attachment-route
+            segment: production
+            share-with:
+              - hybrid
+        attachment-policies:
+          - rule-number: 100
+            condition-logic: or
+            conditions:
+              - type: tag-value
+                operator: equals
+                key: segment
+                value: production
+            action:
+              association-method: constant
+              segment: production
+          - rule-number: 200
+            condition-logic: or
+            conditions:
+              - type: tag-value
+                operator: equals
+                key: segment
+                value: hybrid
+            action:
+              association-method: constant
+              segment: hybrid
+        attachment-routing-policy-rules:
+          - rule-number: 100
+            description: Apply inbound drop policy to hybrid attachments
+            conditions:
+              - type: routing-policy-label
+                value: hybridRouteFiltering
+            action:
+              associate-routing-policies:
+                - inboundDropDangerousRoutes
+        routing-policies:
+          - routing-policy-name: inboundDropDangerousRoutes
+            routing-policy-description: Drop dangerous routes from on-premises
+            routing-policy-direction: inbound
+            routing-policy-number: 100
+            routing-policy-rules:
+              - rule-number: 100
+                rule-definition:
+                  match-conditions:
+                    - type: prefix-in-prefix-list
+                      value: dangerousPrefixes
+                  condition-logic: or
+                  action:
+                    type: drop
+
+  # ---------- DIRECT CONNECT GATEWAY ----------
+  DxGateway:
+    Type: AWS::DirectConnect::DirectConnectGateway
+    Properties:
+      DirectConnectGatewayName: dxgw-inbound-route-filtering
+      AmazonSideAsn: !Ref DxGatewayAsn
+
+  # ---------- PREFIX LIST ----------
+  DangerousPrefixList:
+    Type: AWS::EC2::PrefixList
+    Properties:
+      PrefixListName: dangerous-prefixes
+      AddressFamily: IPv4
+      MaxEntries: 10
+      Entries:
+        - Cidr: "0.0.0.0/0"
+          Description: Block default route from on-premises
+        - Cidr: "10.0.0.0/16"
+          Description: Block overlap with prod-us-east-1 VPC CIDR
+        - Cidr: "10.0.0.0/8"
+          Description: Block broad supernet from on-premises
+      Tags:
+        - Key: Name
+          Value: dangerous-prefixes
+
+Outputs:
+  CoreNetworkId:
+    Description: Core Network ID.
+    Value: !GetAtt CoreNetwork.CoreNetworkId
+  CoreNetworkArn:
+    Description: Core Network ARN.
+    Value: !GetAtt CoreNetwork.CoreNetworkArn
+  DxGatewayId:
+    Description: Direct Connect Gateway ID.
+    Value: !Ref DxGateway
+  PrefixListId:
+    Description: Managed Prefix List ID for dangerous routes.
+    Value: !Ref DangerousPrefixList
+  PrefixListArn:
+    Description: Managed Prefix List ARN.
+    Value: !GetAtt DangerousPrefixList.Arn
