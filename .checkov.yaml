@@ -1,0 +1,181 @@
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: MIT-0
+#
+# =============================================================================
+# Checkov baseline for AWS Cloud WAN Blueprints
+# =============================================================================
+#
+# This is the committed, tunable Checkov baseline referenced by CI
+# (.github/workflows/ci.yml -> `checkov` job, `config_file: .checkov.yaml`) and
+# by the local pre-commit hooks. It provides a security scan with a tuned
+# baseline and documented suppressions for intentional demo simplifications; the
+# baseline is expected to evolve and the suppression mechanism is documented below.
+#
+# These blueprints are intentionally MINIMAL teaching examples. Their purpose is
+# to demonstrate AWS Cloud WAN segmentation, service insertion, and routing
+# policies - NOT to be a production-hardened reference. A number of Checkov
+# findings therefore correspond to deliberate demo simplifications (ICMP ingress
+# so the connectivity tests in the pattern docs work, open egress, AWS-managed
+# encryption keys instead of CMKs) or to confirmed false positives (SSH ingress
+# that is actually scoped to the EC2 Instance Connect security group). Those are
+# suppressed below, each with a one-line justification.
+#
+# Nearly all findings originate in the two SHARED modules
+# (infra/tf_modules/compute and infra/tf_modules/firewall_policy) rather
+# than in individual patterns, because every pattern reuses them. Fixing or
+# suppressing a finding there affects every pattern at once.
+#
+# -----------------------------------------------------------------------------
+# HOW SUPPRESSION WORKS (two mechanisms - both documented, both supported)
+# -----------------------------------------------------------------------------
+#
+# 1. Repo-wide baseline (this file) - the `skip-check` list below. Add a check
+#    ID here when a finding is a deliberate, repo-wide demo simplification or a
+#    confirmed false positive that affects many patterns. Always add a trailing
+#    `# CKV_...  <one-line justification>` comment so the intent is reviewable.
+#
+# 2. Inline, per-resource - add a comment directly on the offending resource:
+#       Terraform:        #checkov:skip=CKV_AWS_123:reason it is safe here
+#       CloudFormation:   # checkov:skip=CKV_AWS_123:reason it is safe here
+#    Prefer inline skips when the suppression is specific to ONE resource so the
+#    rest of the repo still gets the check. Always include the `:reason`.
+#
+# -----------------------------------------------------------------------------
+# THIS BASELINE IS EXPECTED TO EVOLVE
+# -----------------------------------------------------------------------------
+# Triage each live finding and decide, per check, "fix the code" vs "suppress
+# with justification". As patterns change or new ones are added, entries may be
+# added or removed. Two rules keep it honest:
+#   * Skip ONLY deliberate demo simplifications or confirmed false positives -
+#     never genuinely security-relevant defaults.
+#   * Every skipped ID carries a justification comment.
+#
+# Genuinely security-relevant findings are deliberately NOT suppressed so they
+# stay visible for triage - see the "INTENTIONALLY NOT SKIPPED" note at the end.
+# =============================================================================
+
+# Scope the scan to the IaC this repository actually ships.
+framework:
+  - terraform
+  - cloudformation
+
+# Scan the whole repository from the root, and let skip-path below carve out what is
+# not ours.
+#
+# IMPORTANT: keep this a SINGLE root. Listing multiple directories here caused checkov to
+# silently under-scan - a two-directory list reported 92 passed terraform checks instead of
+# 286, and 1 CloudFormation parsing error instead of 19, i.e. most of the tree was skipped
+# with a green result. If you change this, re-check the totals rather than trusting a
+# passing run.
+#
+# Expected totals for the v2 tree (`checkov -d . --config-file .checkov.yaml`):
+#   terraform:      72 passed, 0 failed
+#   cloudformation:  0 passed, 0 failed, 4 parsing errors (see the note below)
+# The terraform count dropped from 286 when the v1 `patterns/` tree - 16 near-duplicate
+# pattern directories - was removed. A number materially BELOW these is the under-scan
+# symptom, not an improvement.
+directory:
+  - .
+
+# Exclude Terraform provider/module caches. A fresh CI checkout has no
+# .terraform/ directories, but a local working copy does after `terraform init`.
+# Without this, a local scan walks the vendored copies of upstream modules
+# (aws-ia/vpc, aws-ia/cloudwan, their transitive deps) and reports findings for
+# code this repository does not own - and, because several of those are graph
+# checks, local results would differ from CI. Skipping the caches keeps the local
+# scan deterministic and identical to CI.
+skip-path:
+  - .*/\.terraform/.*
+  - ^\.git/.*
+
+# Concise output for CI logs.
+compact: true
+quiet: true
+
+# Note on pass/fail: the CI `checkov` job currently runs with `soft_fail: true`
+# (findings reported but non-blocking). That toggle lives in the workflow, not
+# here, so this baseline stays the single source of truth for WHAT is suppressed
+# regardless of blocking mode.
+#
+# Note on CloudFormation coverage: the workload templates build per-AZ and per-VPC
+# resources with the `AWS::LanguageExtensions` `Fn::ForEach` macro and reference the
+# generated logical IDs dynamically (e.g.
+# `!Ref { "Fn::Sub": "VPC1PrivateRouteTable${AvailabilityZone}" }`). Checkov's
+# CloudFormation parser does not understand an intrinsic function as the argument
+# to `Ref`, so it reports those files as parsing errors and does not scan them. This is a Checkov parser limitation, not a template defect: cfn-lint
+# (which natively supports LanguageExtensions) validates every template in full and
+# is a BLOCKING gate in CI, and Checkov still scans the Terraform equivalents of the
+# same resources.
+#
+# The generated `infra/*/cloudformation/core_network.yaml` templates DO parse - they
+# contain no Fn::ForEach - so the core network resources are scanned.
+
+skip-check:
+  # ---------------------------------------------------------------------------
+  # Confirmed FALSE POSITIVE - the rule does not understand security-group
+  # references. This ingress rule is NOT world-open.
+  # ---------------------------------------------------------------------------
+  - CKV_AWS_24   # "SSH open to 0.0.0.0/0" - infra/tf_modules/compute grants SSH via referenced_security_group_id (the EC2 Instance Connect endpoint SG), never a CIDR. No CIDR-based SSH ingress exists in this repository.
+
+  # ---------------------------------------------------------------------------
+  # Deliberate demo simplification: ICMP INGRESS from any source.
+  # This is a REAL finding, not a false positive, and is accepted because the
+  # whole point of these blueprints is to demonstrate reachability between
+  # segments and Regions, and `ping` is the test the pattern docs tell users to
+  # run. Blast radius is bounded: the instances have
+  # associate_public_ip_address = false and sit in private subnets, so they are
+  # only reachable from within the Cloud WAN network being demonstrated.
+  # ---------------------------------------------------------------------------
+  - CKV_AWS_277  # ICMP ingress from 0.0.0.0/0 on the demo instances - required for the cross-segment / cross-Region ping tests documented in every pattern README; instances have no public IP.
+
+  # ---------------------------------------------------------------------------
+  # Deliberate demo simplification: OPEN EGRESS.
+  # The patterns intentionally allow all egress so instances can reach other
+  # segments and the internet through the inspection path being demonstrated.
+  # ---------------------------------------------------------------------------
+  - CKV_AWS_382  # Allow-all egress is an intentional demo simplification (documented in CONVENTIONS.md and the pattern docs).
+
+  # ---------------------------------------------------------------------------
+  # Module pinning convention (not a security finding).
+  # ---------------------------------------------------------------------------
+  - CKV_TF_1     # Modules are pinned to exact Terraform Registry versions (e.g. = 4.7.3) per CONVENTIONS.md, not git commit hashes; commit-hash pinning is N/A to registry modules.
+
+  # ---------------------------------------------------------------------------
+  # AWS Network Firewall encryption. The firewall policy and its rule groups ARE
+  # encrypted at rest by AWS with an AWS-owned key by default; these checks ask
+  # additionally for a customer-managed KMS key. A CMK is an operational/cost
+  # addition deliberately out of scope for a throwaway demo, and the firewall
+  # policies here are deliberately trivial (allow *.amazon.com, allow ICMP) and
+  # contain nothing sensitive.
+  # ---------------------------------------------------------------------------
+  - CKV_AWS_345  # Network Firewall rule groups use default AWS-owned encryption rather than a CMK (demo simplicity); the rule content is non-sensitive test policy.
+  - CKV_AWS_346  # Network Firewall policy uses default AWS-owned encryption rather than a CMK (demo simplicity).
+
+  # ---------------------------------------------------------------------------
+  # Demo EC2 simplifications. NOTE: IMDSv2 (http_tokens = "required") and
+  # encrypted EBS root volumes ARE enforced in infra/tf_modules/compute and
+  # currently PASS - see "INTENTIONALLY NOT SKIPPED" below.
+  # ---------------------------------------------------------------------------
+  - CKV_AWS_126  # Detailed monitoring off - avoids demo cost.
+  - CKV_AWS_135  # EBS optimization not set - demos use small/default instance types (t2.micro).
+  - CKV2_AWS_41  # No IAM instance profile on the demo EC2 instances - they exist only as ping/curl endpoints for the connectivity tests and need no AWS API access; IMDSv2 is still required. Attaching an empty role would add noise without a security benefit.
+
+# =============================================================================
+# INTENTIONALLY NOT SKIPPED (left visible for triage - do NOT add these to the
+# list above without maintainer sign-off):
+#
+#   * CKV_AWS_23   "Ensure every security group and rule has a description"
+#       Triage outcome: FIXED IN CODE, not suppressed. Every rule in
+#       infra/tf_modules/compute now carries a `description` explaining why
+#       the rule exists. This check now PASSES and must stay unskipped so new
+#       undocumented rules are caught.
+#
+#   * CKV_AWS_79   IMDSv1 / instance metadata - the compute module sets
+#       metadata_options { http_tokens = "required" }, so IMDSv2 is enforced and
+#       this PASSES.
+#   * CKV_AWS_8 / encrypted root volumes - the compute module sets
+#       root_block_device { encrypted = true }, so this PASSES.
+#
+# IMDSv2 and encrypted EBS root volumes are genuine security defaults, not demo
+# simplifications. They already pass and must stay that way.
+# =============================================================================

@@ -41,10 +41,19 @@ terraform.rc
 # macOs
 .DS_Store
 
-# TFLINT
-.tflint.hcl
+# Python bytecode from tools/
+__pycache__/
+*.py[cod]
+
+# NOTE: .tflint.hcl is deliberately NOT ignored. It is the shared TFLint ruleset
+# used by both CI (.github/workflows/ci.yml) and local pre-commit, so it must stay
+# committed. An earlier revision of this file ignored it, which left the tflint
+# check running without a ruleset.
 
 # TF Local Files
+# Provider lock files are not committed: the patterns pin providers with a floor
+# (>=) rather than an exact version, so each `terraform init` resolves the latest
+# matching provider. See CONVENTIONS.md "Version pins".
 .terraform.lock.hcl
 
 .temp

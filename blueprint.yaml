@@ -1,116 +1,180 @@
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: MIT-0
 name: AWS Cloud WAN Blueprints
 service: AWS Cloud WAN
 summary: >
-  A collection of AWS Cloud WAN patterns using several IaC solutions
+  A collection of AWS Cloud WAN blueprints using several IaC solutions
   that demonstrate how to configure and deploy global networks in AWS.
 
-patterns:
-  - name: Simple Architecture
-    description: >
-      Basic multi-region Cloud WAN setup with segments (production,
-      development, shared), tag-based attachment association, and segment
-      sharing between shared and workload segments. Entry point for learning
-      Cloud WAN fundamentals — segments, segment actions, attachment
-      policies, and isolation.
-    iac: [CloudFormation, Terraform]
-    sub_patterns: []
+# ---------------------------------------------------------------------------
+# Infrastructure and policy are separate, independent trees. See V2.md for the
+# reasoning.
+#
+#   * infra/  - deployable patterns, each defined by WHICH ATTACHMENT TYPES exist.
+#               Every pattern ships a baseline.json so it deploys and forwards
+#               traffic out of the box, and spans two AWS Regions.
+#   * policy/ - what a Cloud WAN network policy can express, mirroring the policy
+#               document's own top-level structure.
+#
+# There is deliberately no directory per use case: a use case is a policy
+# document, and the same infrastructure serves many of them.
+# ---------------------------------------------------------------------------
 
-  - name: Multi-AWS Account
+infra:
+  - name: Basic
+    path: infra/1-basic
     description: >
-      Cross-account Cloud WAN deployment that shares the core network from a
-      networking account to one or more spoke accounts using AWS Resource
-      Access Manager (RAM). Demonstrates centralised network management with
-      distributed workloads; does not include service insertion or routing
-      policies.
+      Spoke VPCs across two AWS Regions attached to a Cloud WAN core network.
+      The simplest infrastructure that works, and the base every other pattern
+      extends. Its baseline policy demonstrates segments, tag-based attachment
+      association, and non-transitive segment sharing.
+    attachment_types: [vpc]
+    regions: [us-east-1, eu-west-1]
     iac: [CloudFormation, Terraform]
-    sub_patterns: []
+    status: available
 
-  - name: Traffic Inspection
+  - name: Inspection
+    path: infra/2-inspection
     description: >
-      Centralised security-inspection patterns for egress (north-south) and
-      east-west traffic flows using AWS Network Firewall as the reference
-      appliance. Covers single-hop and dual-hop inspection modes and
-      integration with Transit Gateway for hybrid inspection topologies.
+      Adds inspection VPCs with AWS Network Firewall, attached to a network
+      function group. The simplest place to learn service insertion. Its
+      baseline demonstrates both send-to (egress) and send-via dual-hop
+      (east-west) in one document.
+    attachment_types: [vpc]
+    regions: [us-east-1, eu-west-1]
     iac: [CloudFormation, Terraform]
-    sub_patterns:
-      - name: Centralized Outbound
-        description: >
-          Egress (internet-bound) inspection in every region, with each
-          spoke VPC routed to a local inspection VPC via a send-to
-          service-insertion action.
-      - name: Centralized Outbound (Region Without Inspection)
-        description: >
-          Egress inspection where a region without a local inspection VPC
-          (e.g. eu-west-2) routes its outbound traffic to the nearest
-          region with inspection using with-edge-overrides.
-      - name: East-West (Dual-Hop)
-        description: >
-          Cross-region east-west traffic inspected in both the source and
-          destination regions via send-via with mode dual-hop.
-      - name: East-West (Single-Hop)
-        description: >
-          Cross-region east-west traffic inspected in exactly one region on
-          its path, via send-via with mode single-hop and an inspection
-          matrix defined through with-edge-overrides.
-      - name: East-West with Transit Gateway (Dual-Hop)
-        description: >
-          Spoke VPCs attached to a Transit Gateway that peers with Cloud
-          WAN; intra-region traffic is inspected by TGW inspection VPCs
-          and inter-region traffic is inspected by Cloud WAN inspection
-          VPCs in dual-hop mode. Terraform only.
-      - name: East-West with Transit Gateway (Single-Hop)
-        description: >
-          Spoke VPCs attached to a Transit Gateway that peers with Cloud
-          WAN, combining send-to for intra-region inspection with send-via
-          single-hop for inter-region inspection.
+    iac_notes: >
+      CloudFormation deploys in three phases, because a service-insertion action
+      cannot reference a network function group that has no attachments yet.
+      Both policy templates are generated from baseline.json by
+      tools/sync_cfn_policy.py.
+    status: available
 
-  - name: Routing Policies
+  - name: Transit Gateway
+    path: infra/3-transit_gateway
     description: >
-      Advanced routing-policy capabilities providing fine-grained control
-      over route filtering, summarisation, and BGP-attribute manipulation
-      across segments and hybrid edges. Patterns cover route filtering,
-      path preferences, and route summarisation.
+      Adds a Transit Gateway per Region, peered with Cloud WAN, plus Transit
+      Gateway route-table attachments. The coexistence and migration path, and
+      the cheapest way to exercise BGP-dependent capabilities without hybrid
+      connectivity.
+    attachment_types: [vpc, transit-gateway-route-table]
+    regions: [us-east-1, eu-west-1]
     iac: [CloudFormation, Terraform]
-    sub_patterns:
-      - name: Filtering Secondary CIDR Blocks
-        description: >
-          Route filtering — drops internal-only secondary VPC CIDR blocks
-          at the VPC-attachment layer so they do not propagate across the
-          core network.
-      - name: IPv4/IPv6 Segment Separation
-        description: >
-          Route filtering — creates protocol-specific segments by dropping
-          IPv4 or IPv6 routes when sharing between dual-stack and
-          single-stack segments.
-      - name: Traffic Inspection After Filtering
-        description: >
-          Route filtering combined with service insertion — filters
-          unwanted routes at the attachment layer before applying send-via
-          dual-hop inspection between segments.
-      - name: BGP Community Filtering
-        description: >
-          Route filtering + BGP — segments hybrid traffic by BGP community
-          so a single BGP session can carry routes for multiple routing
-          domains, with Cloud WAN filtering communities to the appropriate
-          segments.
-      - name: Hybrid Path Influence
-        description: >
-          Path preferences — influences inter-region traffic paths between
-          AS-PATH-identical hybrid connections by prepending ASNs on
-          CNE-to-CNE peerings.
-      - name: Direct Connect Gateway Path Influence
-        description: >
-          Path preferences — influences which Direct Connect Gateway each
-          regional segment prefers by prepending ASNs on hybrid-to-VPC
-          sharing, letting European VPCs prefer the Europe DXGW and US
-          VPCs prefer the US DXGW.
-      - name: Route Summarization (Hybrid Attachments)
-        description: >
-          Route summarisation — aggregates VPC CIDR blocks into supernets
-          before advertising to hybrid attachments, with per-region
-          summaries for DXGW and a single supernet for VPN / Connect.
-      - name: Filtering Peered Transit Gateways
-        description: >
-          Route filtering — controls which routes are exchanged between
-          Cloud WAN and peered Transit Gateways, e.g. allowing only IPv6
-          connectivity between regions through peered TGWs.
+    status: available
+
+  - name: Hybrid
+    path: infra/4-hybrid
+    description: >
+      Adds hybrid connectivity - AWS Site-to-Site VPN, Connect (SD-WAN), and/or
+      Direct Connect gateway - each independently optional because their
+      prerequisites differ. The only pattern that unlocks the full BGP
+      capability surface, including BGP communities. Also ships managed prefix
+      lists for route summarization.
+    attachment_types: [vpc, site-to-site-vpn, connect, direct-connect-gateway]
+    regions: [us-east-1, eu-west-1]
+    iac: [CloudFormation, Terraform]
+    iac_notes: >
+      The hybrid attachments and the managed prefix lists are Terraform-only.
+      Each sub-type is enabled independently, which maps badly onto
+      CloudFormation Conditions. The CloudFormation stack deploys the core
+      network, the spoke VPCs, and the policy.
+    status: available
+
+  - name: Multi-account
+    path: infra/5-multi_account
+    description: >
+      A global network, a core network, and an AWS RAM share - deliberately no
+      workloads. Multi-account is a different axis from the other patterns: they
+      answer which attachment types exist, this one answers who owns them. Its
+      documentation covers the cross-account limitations, chiefly that
+      attachment tags are set by the attachment owner.
+    attachment_types: []
+    regions: [us-east-1, eu-west-1]
+    iac: [CloudFormation, Terraform]
+    status: available
+
+policy:
+  # Each document maps 1:1 onto an area of the Cloud WAN policy document, so the
+  # taxonomy is defined by the service rather than by our naming choices. It grows
+  # only when AWS ships a new capability.
+  - name: Building a policy
+    path: policy/policy_generator.md
+    produces: n/a
+    description: >
+      The workflow for turning a stated requirement into a validated policy
+      document: intake questions, assembly order, the constraint checklist, how
+      to validate, and what to hand back. Deliberately separate from SKILLS.md,
+      which is the stable service reference.
+    status: available
+
+  - name: Core network configuration
+    path: policy/1-core_network_configuration.md
+    produces: core-network-configuration
+    description: >
+      Edge locations, ASN ranges, VPN ECMP, inside CIDR blocks, DNS support, and
+      security group referencing.
+    status: available
+
+  - name: Segments
+    path: policy/2-segments.md
+    produces: segments
+    description: >
+      Global routing domains, attachment isolation (including its role as a
+      prerequisite for intra-segment inspection), Region scoping, and attachment
+      acceptance.
+    status: available
+
+  - name: Attachment policies
+    path: policy/3-attachment_policies.md
+    produces: attachment-policies
+    description: >
+      How attachments bind to segments and network function groups: rule
+      numbering and evaluation order, condition types, association methods, and
+      when to bind by tag versus by attachment type.
+    status: available
+
+  - name: Segment sharing
+    path: policy/4-segment_sharing.md
+    produces: segment-actions (share)
+    description: >
+      Exchanging routes between segments without inspection, why sharing is
+      non-transitive, and the shared-services pattern.
+    status: available
+
+  - name: Service insertion
+    path: policy/5-service_insertion.md
+    produces: network-function-groups, segment-actions (send-to, send-via)
+    description: >
+      Traffic inspection: network function groups, egress versus east-west,
+      single-hop versus dual-hop, edge overrides, and the isolation and
+      appliance-mode prerequisites.
+    status: available
+
+  - name: Routing policies
+    path: policy/6-routing_policies.md
+    produces: routing-policies, attachment-routing-policy-rules
+    description: >
+      Route filtering, summarization, path preferences, and BGP communities,
+      across the three association scopes (attachments, segment shares, and
+      CNE-to-CNE pairs).
+    status: available
+
+# Complete, deployable policy documents. Deliberately rare - a candidate ships as
+# an example only if it clears all four parts of the admission rule in
+# policy/README.md. Snippets inside the documents above are the default way a use
+# case is documented; policy/README.md also records the candidates that were
+# rejected and why.
+policy_examples:
+  - name: Filter then inspect
+    path: policy/examples/filter_then_inspect.json
+    pattern: infra/2-inspection
+    combines: [routing-policies, network-function-groups, segment-actions]
+    description: >
+      Drops a VPC's secondary CIDR blocks at the attachment layer, then inspects
+      what remains with send-via dual-hop. The ordering matters and is the reason
+      this one is an example rather than two snippets: a route filtered at the
+      attachment layer never reaches the inspection path, so filtering changes
+      what inspection sees.
+    verify_with: >
+      Set create_secondary_cidrs = true on infra/2-inspection to add the
+      secondary CIDR blocks the routing policy drops.

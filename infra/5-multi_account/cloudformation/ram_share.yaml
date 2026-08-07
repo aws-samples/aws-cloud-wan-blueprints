@@ -1,0 +1,57 @@
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: MIT-0
+AWSTemplateFormatVersion: 2010-09-09
+Description: AWS Cloud WAN Blueprints - Multi Account (AWS RAM share for the core network)
+
+# Shares the CORE NETWORK with other accounts so they can create attachments into its
+# segments from their own VPCs. This is the whole pattern - deliberately no workloads.
+#
+# Sharing a core network grants the ability to create attachments into it, and the segment
+# an attachment lands in is decided by a tag the SPOKE account sets. Prefer specific
+# account IDs or an organizational unit ARN over an entire organization ARN, and see the
+# pattern README for defensive attachment-policy design.
+
+Parameters:
+  CoreNetworkArn:
+    Type: String
+    Description: ARN of the core network to share (the CoreNetworkArn output of core_network.yaml).
+
+  SpokePrincipals:
+    Type: CommaDelimitedList
+    Description: >
+      Principals to share the core network with: AWS account IDs, or an Organization /
+      organizational unit ARN.
+
+  AllowExternalPrincipals:
+    Type: String
+    Default: "false"
+    AllowedValues:
+      - "true"
+      - "false"
+    Description: >
+      Allow sharing with principals outside your AWS Organization. Leave false when both
+      accounts are in the same Organization with RAM sharing enabled, in which case the
+      share is auto-accepted.
+
+  Identifier:
+    Type: String
+    Default: multi-account
+    Description: Project identifier, used as a suffix when naming resources.
+
+Resources:
+  CoreNetworkShare:
+    Type: AWS::RAM::ResourceShare
+    Properties:
+      Name: !Sub 'core-network-share-${Identifier}'
+      AllowExternalPrincipals: !Ref AllowExternalPrincipals
+      ResourceArns:
+        - !Ref CoreNetworkArn
+      Principals: !Ref SpokePrincipals
+      Tags:
+        - Key: Name
+          Value: !Sub 'core-network-share-${Identifier}'
+
+Outputs:
+  ResourceShareArn:
+    Description: AWS RAM resource share ARN. A spoke account outside your Organization needs this to accept the invitation.
+    Value: !Ref CoreNetworkShare

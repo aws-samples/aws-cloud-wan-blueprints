@@ -1,0 +1,501 @@
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: MIT-0
+#
+# Static-only CI for AWS Cloud WAN Blueprints.
+#
+# Nothing in this workflow contacts AWS: no credentials are configured, no
+# backend is initialized, and no resource is created. Every job is a static
+# check over the committed sources.
+#
+# CI <-> pre-commit lockstep: the checks, tools, and pinned versions in this
+# workflow must stay in step with .pre-commit-config.yaml. A change to one
+# (adding/removing a check, bumping a tool version) MUST be mirrored in the other
+# so local and CI stay consistent (see CONVENTIONS.md "CI / pre-commit lockstep").
+#
+# Pipeline shape:
+#   * discover          - AUTOMATICALLY enumerates the infra/ pattern directories so
+#                         new patterns are picked up without editing this file. This
+#                         is what let the tree be reorganized for v2 without
+#                         rewriting CI.
+#   * fmt               - repo-wide `terraform fmt -check -recursive`.
+#   * terraform-checks  - per-pattern `terraform init -backend=false` + `validate`.
+#   * tflint            - per-pattern `tflint` with the AWS ruleset (.tflint.hcl).
+#   * cfn-lint          - per-template `cfn-lint` (handles AWS::LanguageExtensions).
+#   * terraform-docs    - generated-README drift check for dirs with a `.header.md`.
+#   * policy            - Cloud WAN policy validation: baselines + examples, the inline
+#                         JSON snippets in policy/*.md, and generated-CFN-policy drift.
+#   * markdown-links    - repository markdown link check (lychee).
+#   * checkov           - IaC security scan over the repo, using `.checkov.yaml`
+#                         (the committed, tunable baseline).
+#
+# Action versions are pinned to specific majors. Explicit failure annotations
+# (GitHub `::error` workflow commands naming the pattern path + check) mean a
+# maintainer immediately sees which pattern and which check failed.
+
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # discover: enumerate pattern directories automatically.
+  #
+  # Two matrices are emitted as JSON job outputs via $GITHUB_OUTPUT:
+  #   * terraform_dirs  - per-pattern Terraform roots (dirs containing *.tf),
+  #                       excluding .terraform/ caches, the shared
+  #                       infra/tf_modules/* modules, and per-pattern
+  #                       terraform/modules/* child modules. Those child modules
+  #                       declare no provider configuration of their own and are
+  #                       validated transitively when a pattern that calls them
+  #                       is validated.
+  #   * cfn_files       - CloudFormation template files under
+  #                       infra/**/cloudformation/ (*.yaml and *.yml).
+  #
+  # Downstream check jobs consume these with:
+  #   needs: discover
+  #   strategy:
+  #     matrix:
+  #       dir: ${{ fromJSON(needs.discover.outputs.terraform_dirs) }}
+  # ---------------------------------------------------------------------------
+  discover:
+    name: Discover pattern directories
+    runs-on: ubuntu-latest
+    outputs:
+      terraform_dirs: ${{ steps.find.outputs.terraform_dirs }}
+      cfn_files: ${{ steps.find.outputs.cfn_files }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Discover Terraform roots and CloudFormation templates
+        id: find
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Terraform roots: any directory containing at least one *.tf file,
+          # excluding Terraform provider caches and child modules. Nothing is hardcoded
+          # per-pattern, so adding a pattern needs no change here.
+          terraform_dirs="$(
+            find infra -type f -name '*.tf' \
+              -not -path '*/.terraform/*' \
+              -not -path '*/tf_modules/*' \
+              -not -path '*/modules/*' \
+            | xargs -n1 dirname \
+            | sort -u \
+            | jq -R -s -c 'split("\n") | map(select(length > 0))'
+          )"
+
+          # CloudFormation templates: *.yaml / *.yml under any cloudformation/ dir.
+          cfn_files="$(
+            find infra -type f \( -name '*.yaml' -o -name '*.yml' \) \
+              -path '*/cloudformation/*' \
+              -not -path '*/.terraform/*' \
+            | sort \
+            | jq -R -s -c 'split("\n") | map(select(length > 0))'
+          )"
+
+          echo "Discovered Terraform roots:"
+          echo "${terraform_dirs}" | jq -r '.[]'
+          echo "Discovered CloudFormation templates:"
+          echo "${cfn_files}" | jq -r '.[]'
+
+          {
+            echo "terraform_dirs=${terraform_dirs}"
+            echo "cfn_files=${cfn_files}"
+          } >> "$GITHUB_OUTPUT"
+
+  # ===========================================================================
+  # fmt: repo-wide Terraform formatting check (runs once over the whole repo).
+  # ===========================================================================
+  fmt:
+    name: "Terraform fmt (repo-wide)"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+          terraform_wrapper: false
+
+      - name: terraform fmt -check -recursive
+        shell: bash
+        run: |
+          # `set +e` disables the runner's default errexit so we can capture the
+          # exit code and emit a clear annotation before failing the step.
+          set +e
+          # Fails (and lists the offending files) if any *.tf is not canonically
+          # formatted. A clean checkout has no .terraform/ caches, so -recursive
+          # only sees committed sources.
+          echo "::group::terraform fmt -check -recursive -diff"
+          terraform fmt -check -recursive -diff -no-color
+          status=$?
+          echo "::endgroup::"
+          if [ "${status}" -ne 0 ]; then
+            # Re-run in list-only mode to annotate each offending file inline so a
+            # maintainer can see exactly which files need `terraform fmt`.
+            while IFS= read -r f; do
+              [ -n "${f}" ] || continue
+              echo "::error file=${f},title=terraform fmt::[terraform fmt] ${f} is not canonically formatted. Run: terraform fmt ${f}"
+            done < <(terraform fmt -check -recursive -list=true -no-color)
+            echo "::error title=terraform fmt::[terraform fmt] FAILED (repo-wide). One or more *.tf files are not canonically formatted (see annotations above). Fix locally with: terraform fmt -recursive"
+            exit 1
+          fi
+
+  # ===========================================================================
+  # terraform-checks: per-pattern init (no backend, no creds) + validate.
+  # ===========================================================================
+  terraform-checks:
+    name: "Terraform validate: ${{ matrix.dir }}"
+    needs: discover
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        dir: ${{ fromJSON(needs.discover.outputs.terraform_dirs) }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+          terraform_wrapper: false
+
+      - name: terraform init (no backend, no credentials)
+        shell: bash
+        working-directory: ${{ matrix.dir }}
+        run: |
+          set +e
+          echo "::group::terraform init: ${{ matrix.dir }}"
+          terraform init -backend=false -input=false -no-color
+          status=$?
+          echo "::endgroup::"
+          if [ "${status}" -ne 0 ]; then
+            echo "::error title=terraform init::[terraform init] FAILED in ${{ matrix.dir }}"
+            exit "${status}"
+          fi
+
+      - name: terraform validate
+        shell: bash
+        working-directory: ${{ matrix.dir }}
+        run: |
+          set +e
+          echo "::group::terraform validate: ${{ matrix.dir }}"
+          terraform validate -no-color
+          status=$?
+          echo "::endgroup::"
+          if [ "${status}" -ne 0 ]; then
+            echo "::error title=terraform validate::[terraform validate] FAILED in ${{ matrix.dir }}"
+            exit "${status}"
+          fi
+
+  # ===========================================================================
+  # tflint: per-pattern lint with the AWS ruleset declared in .tflint.hcl.
+  # ===========================================================================
+  tflint:
+    name: "tflint: ${{ matrix.dir }}"
+    needs: discover
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        dir: ${{ fromJSON(needs.discover.outputs.terraform_dirs) }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup TFLint
+        uses: terraform-linters/setup-tflint@v4
+        with:
+          tflint_version: "v0.61.0"
+
+      - name: tflint --init (install AWS ruleset)
+        shell: bash
+        env:
+          # Avoid GitHub API rate limits when downloading the ruleset plugin.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: tflint --init --config "${GITHUB_WORKSPACE}/.tflint.hcl"
+
+      - name: tflint
+        shell: bash
+        run: |
+          set +e
+          echo "::group::tflint: ${{ matrix.dir }}"
+          tflint \
+            --config "${GITHUB_WORKSPACE}/.tflint.hcl" \
+            --chdir "${{ matrix.dir }}" \
+            --no-color
+          status=$?
+          echo "::endgroup::"
+          if [ "${status}" -ne 0 ]; then
+            echo "::error title=tflint::[tflint] FAILED in ${{ matrix.dir }} (see findings above)"
+            exit "${status}"
+          fi
+
+  # ===========================================================================
+  # cfn-lint: per-template CloudFormation lint.
+  #
+  # cfn-lint v1.x natively understands the AWS::LanguageExtensions transform and
+  # the `Fn::ForEach` iteration these templates rely on to build per-AZ
+  # resources, including `!Ref { "Fn::Sub": "..." }` references to the generated
+  # logical IDs. An earlier revision of the repo had the cfn-lint hook disabled
+  # over Fn::ForEach false positives raised by cfn-lint 0.x; v1.x resolves those,
+  # so the check is enabled here as a blocking gate.
+  # ===========================================================================
+  cfn-lint:
+    name: "cfn-lint: ${{ matrix.file }}"
+    needs: discover
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        file: ${{ fromJSON(needs.discover.outputs.cfn_files) }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install cfn-lint
+        shell: bash
+        run: pip install "cfn-lint==1.46.0"
+
+      - name: cfn-lint ${{ matrix.file }}
+        shell: bash
+        run: |
+          set +e
+          echo "::group::cfn-lint: ${{ matrix.file }}"
+          cfn-lint "${{ matrix.file }}"
+          status=$?
+          echo "::endgroup::"
+          if [ "${status}" -ne 0 ]; then
+            echo "::error file=${{ matrix.file }},title=cfn-lint::[cfn-lint] FAILED for ${{ matrix.file }} (see findings above)"
+            exit "${status}"
+          fi
+
+  # ===========================================================================
+  # terraform-docs: fail if any generated README.md is stale.
+  #
+  # Only directories that follow the generated-README convention (they contain a
+  # `.header.md`) are checked, using the shared .config/.terraform-docs.yaml.
+  # `--output-check` compares the would-be output against the committed README
+  # without writing anything.
+  # ===========================================================================
+  terraform-docs:
+    name: terraform-docs drift check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install terraform-docs
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="v0.21.0"
+          curl -sSLo /tmp/terraform-docs.tar.gz \
+            "https://terraform-docs.io/dl/${version}/terraform-docs-${version}-linux-amd64.tar.gz"
+          tar -xzf /tmp/terraform-docs.tar.gz -C /tmp terraform-docs
+          chmod +x /tmp/terraform-docs
+          sudo mv /tmp/terraform-docs /usr/local/bin/terraform-docs
+          terraform-docs --version
+
+      - name: Check generated READMEs are up to date
+        shell: bash
+        run: |
+          set -euo pipefail
+          config="${GITHUB_WORKSPACE}/.config/.terraform-docs.yaml"
+          fail=0
+          while IFS= read -r header; do
+            dir="$(dirname "${header}")"
+            echo "::group::terraform-docs drift: ${dir}"
+            if ! terraform-docs --config "${config}" --output-check "${dir}"; then
+              echo "::error file=${dir}/README.md::Generated README is stale for ${dir}. Run: terraform-docs --config .config/.terraform-docs.yaml ${dir}"
+              fail=1
+            fi
+            echo "::endgroup::"
+          done < <(find infra -type f -name '.header.md' -not -path '*/.terraform/*' | sort)
+          exit "${fail}"
+
+  # ===========================================================================
+  # policy: validate Cloud WAN network policy documents.
+  #
+  # Three things are checked:
+  #   * every infra pattern's baseline.json and every policy/examples/*.json passes
+  #     the structural, cross-reference, and Cloud WAN constraint checks, including
+  #     the attachment tagging contract of the pattern it belongs to;
+  #   * every fenced ```json block in policy/*.md is valid as a policy FRAGMENT, so
+  #     inline snippets in the documentation cannot rot;
+  #   * each generated CloudFormation core-network template still matches the
+  #     baseline.json it was generated from.
+  #
+  # The scripts are dependency-free (Python standard library only), so there is no
+  # install step. Nothing here contacts AWS.
+  # ===========================================================================
+  policy:
+    name: Cloud WAN policy validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Validate baseline and example policies
+        shell: bash
+        run: |
+          set +e
+          echo "::group::validate_policy.py --all"
+          python3 tools/validate_policy.py --all
+          status=$?
+          echo "::endgroup::"
+          if [ "${status}" -ne 0 ]; then
+            echo "::error title=policy validation::[validate_policy] a baseline or example policy has errors (see above)"
+            exit "${status}"
+          fi
+
+      - name: Validate inline JSON snippets in policy/*.md
+        shell: bash
+        run: |
+          set +e
+          echo "::group::validate_policy.py --snippets policy"
+          python3 tools/validate_policy.py --snippets policy
+          status=$?
+          echo "::endgroup::"
+          if [ "${status}" -ne 0 ]; then
+            echo "::error title=policy snippets::[validate_policy] an inline JSON snippet in policy/*.md is invalid (see above)"
+            exit "${status}"
+          fi
+
+      - name: Check generated CloudFormation policy templates are in sync
+        shell: bash
+        run: |
+          set +e
+          echo "::group::sync_cfn_policy.py --all --check"
+          python3 tools/sync_cfn_policy.py --all --check
+          status=$?
+          echo "::endgroup::"
+          if [ "${status}" -ne 0 ]; then
+            echo "::error title=policy sync::[sync_cfn_policy] a generated core_network.yaml is stale. Regenerate with: python3 tools/sync_cfn_policy.py --all"
+            exit "${status}"
+          fi
+
+  # ===========================================================================
+  # markdown-links: check links across repository markdown with lychee.
+  #
+  # Kept lenient on transient/rate-limited responses (429) so external flakiness
+  # does not block PRs; broken internal links still fail. Static only.
+  # ===========================================================================
+  markdown-links:
+    name: Markdown link check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Link check (lychee)
+        uses: lycheeverse/lychee-action@v2
+        with:
+          args: >-
+            --no-progress
+            --max-retries 2
+            --accept 200,206,429
+            --exclude-path .terraform
+            './**/*.md'
+          fail: true
+        env:
+          # Use the workflow token to raise GitHub link-check rate limits.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ===========================================================================
+  # checkov: static IaC security scan over the infrastructure patterns.
+  #
+  # References the committed `.checkov.yaml` baseline (the single source of truth
+  # for what is suppressed and why). `soft_fail` keeps findings non-blocking for
+  # now; flip it to a blocking gate once the baseline is fully triaged.
+  # ===========================================================================
+  checkov:
+    name: Checkov security scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Checkov
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: .
+          config_file: .checkov.yaml
+          soft_fail: true
+          # `output_format: cli` + `quiet: true` keeps the human-readable CLI
+          # report and suppresses only the PASSED checks. FAILED checks are still
+          # printed in full, including the offending file path and the Checkov
+          # check ID (e.g. `CKV_AWS_*`), so a maintainer can see exactly which
+          # pattern file and which check failed. When this is hardened from
+          # `soft_fail` to a blocking gate, that same per-file
+          # + per-check output is what surfaces in the job log.
+          output_format: cli
+          quiet: true
+
+  # ===========================================================================
+  # ci-passed: single aggregator gate.
+  #
+  # This job depends on every other job and succeeds only if none of them
+  # failed/were cancelled. Configure only this check ("CI passed") in the branch
+  # protection ruleset.
+  #
+  # Maintenance: if you add a new TOP-LEVEL job to this workflow, add it to the
+  # `needs` list below so it is included in the gate.
+  # ===========================================================================
+  ci-passed:
+    name: CI passed
+    runs-on: ubuntu-latest
+    # Run even when an upstream job fails so we can evaluate results explicitly
+    # (without `always()`, this job would be skipped on failure, which produces
+    # a confusing "skipped required check" state in the ruleset).
+    if: always()
+    needs:
+      - discover
+      - fmt
+      - terraform-checks
+      - tflint
+      - cfn-lint
+      - terraform-docs
+      - policy
+      - markdown-links
+      - checkov
+    steps:
+      - name: Verify all required jobs succeeded
+        shell: bash
+        run: |
+          results="${{ join(needs.*.result, ' ') }}"
+          echo "Upstream job results: ${results}"
+          for r in ${results}; do
+            if [ "${r}" = "failure" ] || [ "${r}" = "cancelled" ]; then
+              echo "::error title=CI passed::A required CI job did not pass (result: ${r}). See the failed job above."
+              exit 1
+            fi
+          done
+          echo "All required CI jobs passed."

@@ -1,0 +1,107 @@
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: MIT-0
+#
+# ============================================================================
+# GENERATED FILE - DO NOT EDIT BY HAND.
+#
+# The PolicyDocument below is generated from baseline.json in this pattern's
+# directory, which is the single source of truth for the Cloud WAN network
+# policy. Edit baseline.json, then regenerate:
+#
+#     python3 tools/sync_cfn_policy.py <pattern-dir>
+#
+# CI fails if this file drifts from baseline.json.
+# ============================================================================
+AWSTemplateFormatVersion: 2010-09-09
+Description: AWS Cloud WAN Blueprints - Inspection (global & core network)
+
+Parameters:
+  Identifier:
+    Type: String
+    Default: 2-inspection
+    Description: Project identifier, used as a suffix when naming resources.
+
+Resources:
+  GlobalNetwork:
+    Type: AWS::NetworkManager::GlobalNetwork
+    Properties:
+      Description: !Sub 'Global Network - ${Identifier}'
+      Tags:
+        - Key: Name
+          Value: !Sub 'global-network-${Identifier}'
+
+  CoreNetwork:
+    Type: AWS::NetworkManager::CoreNetwork
+    Properties:
+      Description: !Sub 'Core Network - ${Identifier}'
+      GlobalNetworkId: !Ref GlobalNetwork
+      Tags:
+        - Key: Name
+          Value: !Sub 'core-network-${Identifier}'
+      PolicyDocument:
+        version: "2025.11"
+        core-network-configuration:
+          vpn-ecmp-support: false
+          asn-ranges:
+            - 64520-64525
+          edge-locations:
+            - location: us-east-1
+            - location: eu-west-1
+        segments:
+          - name: production
+            require-attachment-acceptance: false
+            isolate-attachments: true
+          - name: development
+            require-attachment-acceptance: false
+            isolate-attachments: false
+        network-function-groups:
+          - name: inspectionVpcs
+            require-attachment-acceptance: false
+        attachment-policies:
+          - rule-number: 100
+            condition-logic: or
+            conditions:
+              - type: tag-value
+                operator: equals
+                key: inspection
+                value: "true"
+            action:
+              add-to-network-function-group: inspectionVpcs
+          - rule-number: 200
+            condition-logic: and
+            conditions:
+              - type: attachment-type
+                operator: equals
+                value: vpc
+              - type: tag-exists
+                key: domain
+            action:
+              association-method: tag
+              tag-value-of-key: domain
+        segment-actions:
+          - action: send-to
+            segment: production
+            via:
+              network-function-groups:
+                - inspectionVpcs
+          - action: send-to
+            segment: development
+            via:
+              network-function-groups:
+                - inspectionVpcs
+          - action: send-via
+            segment: production
+            mode: dual-hop
+            when-sent-to:
+              segments: "*"
+            via:
+              network-function-groups:
+                - inspectionVpcs
+
+Outputs:
+  CoreNetworkId:
+    Description: Core Network ID.
+    Value: !GetAtt CoreNetwork.CoreNetworkId
+  CoreNetworkArn:
+    Description: Core Network ARN.
+    Value: !GetAtt CoreNetwork.CoreNetworkArn
