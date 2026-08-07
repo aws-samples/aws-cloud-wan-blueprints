@@ -28,15 +28,7 @@ make deploy
 
 That deploys the pattern with its working baseline policy: the core network first, then the workloads in both Regions. To take it a stack at a time, `make deploy-cloudwan` then `make deploy-workloads`.
 
-> **Using a policy of your own?** CloudFormation needs the policy **inline** in the template — `PolicyDocument` takes JSON with no file or S3 option, and a stack parameter caps at 4,096 bytes — so instead of pointing at a different file you deploy a different template. `core_network.yaml` has to keep matching [`../baseline.json`](../baseline.json), which CI compares, so copy it rather than editing it:
->
-> ```bash
-> cp core_network.yaml my_core_network.yaml
-> # replace the PolicyDocument: block in the copy with your policy as YAML, then:
-> make deploy-cloudwan CORE_TEMPLATE=my_core_network.yaml
-> ```
->
-> [`policy_generator.md`](../../../policy/policy_generator.md) returns the policy as YAML as well as JSON if you tell it you are deploying with CloudFormation. Prefer not to touch templates at all? [`../terraform/`](../terraform/) takes any policy file as a variable.
+> **Using a policy of your own?** CloudFormation needs the policy **inline** in the template — `PolicyDocument` takes JSON with no file or S3 option, and a stack parameter caps at 4,096 bytes — so instead of pointing at a different file you deploy a different template. `core_network.yaml` has to keep matching [`../baseline.json`](../baseline.json), which CI compares, so copy it rather than editing it.
 
 ## Cleanup
 
