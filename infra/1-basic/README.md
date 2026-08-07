@@ -55,8 +55,6 @@ Resulting reachability:
 | `shared` | `shared` (other Region) | Blocked | `shared` is isolated, so its attachments cannot reach each other |
 | `prod` | `dev` | Blocked | No sharing declared between `production` and `development` |
 
-Isolation blocks traffic *within* a segment, and segments never reach each other unless a `share` action says so — sharing is explicit and non-transitive. See [`policy/2-segments.md`](../../policy/2-segments.md) and [`policy/4-segment_sharing.md`](../../policy/4-segment_sharing.md).
-
 ## Verifying it works
 
 1. In the AWS Network Manager console, confirm the six VPC attachments are `AVAILABLE` **and** associated with the segment matching its `domain` tag.
