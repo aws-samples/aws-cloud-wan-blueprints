@@ -11,14 +11,6 @@ variable "identifier" {
 }
 
 # AWS Regions
-#
-# This pattern deploys two Regions. To add a third, add a provider alias in
-# providers.tf, spoke VPC and inspection VPC module blocks in main.tf, and the Region
-# to edge-locations in your policy document. See infra/README.md.
-#
-# NOTE: the baseline policy uses `send-via` with mode `dual-hop`, which requires an
-# inspection attachment in EVERY Region of the participating segments. If you add a
-# Region, add an inspection VPC there too, or switch the policy to `single-hop`.
 variable "aws_regions" {
   type        = map(string)
   description = "AWS Regions to create the environment. Must match the edge-locations in the policy document."
@@ -29,10 +21,6 @@ variable "aws_regions" {
 }
 
 # Cloud WAN network policy
-#
-# The default is this pattern's working baseline, which demonstrates both egress
-# (`send-to`) and east-west (`send-via`) inspection. Point this at your own policy to
-# deploy a different Cloud WAN configuration against the same infrastructure.
 variable "policy_document" {
   type        = string
   description = "Path to the Cloud WAN network policy JSON document to deploy."
@@ -146,40 +134,5 @@ variable "ireland_inspection_vpc" {
     public_subnet_netmask     = 28
     inspection_subnet_netmask = 28
     cnetwork_subnet_netmask   = 28
-  }
-}
-
-# ---------- SECONDARY CIDR BLOCKS (opt-in) ----------
-# Adds a secondary IPv4 CIDR block, with its own subnets, to every spoke VPC.
-#
-# OFF by default: it costs extra subnets and the pattern's baseline policy does not filter
-# it, so it would propagate a range you did not ask for.
-#
-# Turn it on to work through policy/examples/filter_then_inspect.json, which needs a
-# prefix that the routing policy actually drops:
-#
-#     terraform apply -var create_secondary_cidrs=true \
-#       -var policy_document=../../../policy/examples/filter_then_inspect.json
-#
-# 100.64.0.0/16 is deliberately OUTSIDE 10.0.0.0/8, so an "allow 10.0.0.0/8, drop
-# everything else" policy drops it while leaving the spoke and inspection VPC prefixes
-# (both inside 10.0.0.0/8) intact.
-variable "create_secondary_cidrs" {
-  type        = bool
-  description = "Add a secondary IPv4 CIDR block to each spoke VPC. Needed by the filter_then_inspect example."
-  default     = false
-}
-
-variable "secondary_cidr_blocks" {
-  type = object({
-    nvirginia = string
-    ireland   = string
-    netmask   = number
-  })
-  description = "Secondary IPv4 CIDR block per Region, and the subnet netmask to carve from it."
-  default = {
-    nvirginia = "100.64.0.0/16"
-    ireland   = "100.65.0.0/16"
-    netmask   = 28
   }
 }

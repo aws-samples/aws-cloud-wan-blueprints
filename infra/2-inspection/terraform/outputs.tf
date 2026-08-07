@@ -26,8 +26,3 @@ output "inspection_vpcs" {
     (var.aws_regions.ireland)   = module.ireland_inspection_vpc.central_vpcs.inspection.vpc_attributes.id
   }
 }
-
-output "policy_document" {
-  description = "Path to the Cloud WAN network policy document deployed."
-  value       = var.policy_document
-}

@@ -7,10 +7,12 @@
     ],
     "edge-locations": [
       {
-        "location": "us-east-1"
+        "location": "us-east-1",
+        "asn": 64520
       },
       {
-        "location": "eu-west-1"
+        "location": "eu-west-1",
+        "asn": 64521
       }
     ]
   },
@@ -90,13 +92,19 @@
     {
       "action": "send-via",
       "segment": "production",
-      "mode": "dual-hop",
+      "mode": "single-hop",
       "when-sent-to": {
-        "segments": "*"
+        "segments": ["development"]
       },
       "via": {
         "network-function-groups": [
           "inspectionVpcs"
+        ],
+        "with-edge-overrides": [
+          {
+            "edge-sets": [["us-east-1", "eu-west-1"]],
+            "use-edge-location": "us-east-1"
+          }
         ]
       }
     }

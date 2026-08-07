@@ -31,14 +31,6 @@ Mappings:
       PrivateSubnetb: 10.0.0.48/28
       CWANSubneta: 10.0.0.64/28
       CWANSubnetb: 10.0.0.80/28
-    ap-southeast-2:
-      CIDR: 10.20.0.0/24
-      EndpointSubneta: 10.20.0.0/28
-      EndpointSubnetb: 10.20.0.16/28
-      PrivateSubneta: 10.20.0.32/28
-      PrivateSubnetb: 10.20.0.48/28
-      CWANSubneta: 10.20.0.64/28
-      CWANSubnetb: 10.20.0.80/28
   DevVpcCIDR:
     us-east-1:
       CIDR: 10.10.1.0/24
@@ -56,14 +48,6 @@ Mappings:
       PrivateSubnetb: 10.0.1.48/28
       CWANSubneta: 10.0.1.64/28
       CWANSubnetb: 10.0.1.80/28
-    ap-southeast-2:
-      CIDR: 10.20.1.0/24
-      EndpointSubneta: 10.20.1.0/28
-      EndpointSubnetb: 10.20.1.16/28
-      PrivateSubneta: 10.20.1.32/28
-      PrivateSubnetb: 10.20.1.48/28
-      CWANSubneta: 10.20.1.64/28
-      CWANSubnetb: 10.20.1.80/28
   InspectionVpcCIDR:
     us-east-1:
       CIDR: 10.100.0.0/16
@@ -74,14 +58,6 @@ Mappings:
       PublicSubneta: 10.100.0.64/28
       PublicSubnetb: 10.100.0.80/28
     eu-west-1:
-      CIDR: 10.100.0.0/16
-      EndpointSubneta: 10.100.0.0/28
-      EndpointSubnetb: 10.100.0.16/28
-      CWANSubneta: 10.100.0.32/28
-      CWANSubnetb: 10.100.0.48/28
-      PublicSubneta: 10.100.0.64/28
-      PublicSubnetb: 10.100.0.80/28
-    ap-southeast-2:
       CIDR: 10.100.0.0/16
       EndpointSubneta: 10.100.0.0/28
       EndpointSubnetb: 10.100.0.16/28
@@ -255,8 +231,8 @@ Resources:
       ToPort: 22
       DestinationSecurityGroupId: !Ref VPCProdInstanceSecurityGroup
 
-  # # For::Each iteration: per AZ (2 AZs)
-  # # EC2 Instances
+  # For::Each iteration: per AZ (2 AZs)
+  # EC2 Instances
   'Fn::ForEach::ProductionInstances':
     - AvailabilityZone
     - [a, b]
@@ -455,8 +431,8 @@ Resources:
       ToPort: 22
       DestinationSecurityGroupId: !Ref VPCDevInstanceSecurityGroup
 
-  # # For::Each iteration: per AZ (2 AZs)
-  # # EC2 Instances
+  # For::Each iteration: per AZ (2 AZs)
+  # EC2 Instances
   'Fn::ForEach::DevelopmentInstances':
     - AvailabilityZone
     - [a, b]
@@ -609,6 +585,9 @@ Resources:
     Type: AWS::NetworkManager::VpcAttachment
     Properties:
       CoreNetworkId: !Ref CoreNetworkId
+      # Appliance mode keeps both directions of a flow on the same firewall endpoint.
+      Options:
+        ApplianceModeSupport: true
       SubnetArns:
         - Fn::Join:
             - ""
@@ -680,13 +659,15 @@ Resources:
           - "aws:alert_strict"
         StatefulRuleGroupReferences:
           - Priority: 10
+            ResourceArn: !GetAtt NetworkFirewallStatefulAllowIcmp.RuleGroupArn
+          - Priority: 20
             ResourceArn: !GetAtt NetworkFirewallStatefulAllowDomains.RuleGroupArn
       FirewallPolicyName: !Join
         - "-"
         - - "firewall-policy"
           - !Ref AWS::Region
 
-  # Stateless Rule Group - Dropping any SSH connection
+  # Stateless Rule Group - Dropping any SSH or RDP connection
   NetworkFirewallStatelessDropRemote:
     Type: AWS::NetworkFirewall::RuleGroup
     Properties:
@@ -695,7 +676,7 @@ Resources:
         - "-"
         - - "drop-remote"
           - !Ref AWS::StackName
-      Description: Drop remote SSH connections
+      Description: Drop remote SSH and RDP connections
       Type: STATELESS
       RuleGroup:
         RulesSource:
@@ -718,8 +699,37 @@ Resources:
                         ToPort: 22
                   Actions:
                     - "aws:drop"
+              - Priority: 2
+                RuleDefinition:
+                  MatchAttributes:
+                    Protocols:
+                      - 27
+                    Sources:
+                      - AddressDefinition: 0.0.0.0/0
+                    Destinations:
+                      - AddressDefinition: 0.0.0.0/0
+                  Actions:
+                    - "aws:drop"
 
-  # Stateful Rule Group - ICMP Alert
+  # Stateful Rule Group - Allowing ICMP traffic
+  NetworkFirewallStatefulAllowIcmp:
+    Type: AWS::NetworkFirewall::RuleGroup
+    Properties:
+      Capacity: 100
+      RuleGroupName: !Join
+        - "-"
+        - - "allow-icmp"
+          - !Ref AWS::StackName
+      Description: Allowing ICMP traffic
+      Type: STATEFUL
+      RuleGroup:
+        StatefulRuleOptions:
+          RuleOrder: STRICT_ORDER
+        RulesSource:
+          RulesString: |-
+            alert icmp any any -> any any (msg: "Alerting traffic passing through firewall"; sid:1; rev:1;)
+            pass icmp any any -> any any (msg: "Allowing ICMP packets"; sid:2; rev:1;)
+  # Stateful Rule Group - Allowing access to .amazon.com (HTTPS)
   NetworkFirewallStatefulAllowDomains:
     Type: AWS::NetworkFirewall::RuleGroup
     Properties:

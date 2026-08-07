@@ -23,10 +23,7 @@ provider "aws" {
   alias  = "awsnvirginia"
 }
 
-# The AWSCC provider manages the global network and core network. Cloud WAN is a
-# global service, so this alias is only the API endpoint used to manage it - it is
-# not a constraint on where Core Network Edges are created. Edge locations come
-# from the policy document.
+# AWSCC provider definition
 provider "awscc" {
   region = var.aws_regions.nvirginia
   alias  = "awsccnvirginia"
