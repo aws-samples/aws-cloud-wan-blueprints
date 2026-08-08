@@ -38,32 +38,21 @@ variable "policy_document" {
 # ways that look like intermittent blackholing.
 variable "transit_gateway_asns" {
   type        = map(number)
-  description = "Amazon-side ASN for the Transit Gateway in each Region."
+  description = "Amazon-side ASN for the Transit Gateway in each Region. Must not overlap the asn-ranges in the policy document."
   default = {
     nvirginia = 64532
     ireland   = 64533
   }
 }
 
-# Transit Gateway route tables: route table name => Cloud WAN segment.
-# Each becomes one transit-gateway-route-table attachment, tagged with `domain`.
-variable "route_tables" {
-  type        = map(string)
-  description = "Transit Gateway route tables to create in each Region: name => Cloud WAN segment."
-  default = {
-    production  = "production"
-    development = "development"
-  }
-}
-
 # Definition of the spoke VPCs to create in N. Virginia Region.
 #
-# NOTE: these attach to the TRANSIT GATEWAY, not directly to Cloud WAN. `route_table`
+# NOTE: these attach to the TRANSIT GATEWAY, not directly to Cloud WAN. `segment`
 # selects which Transit Gateway route table the VPC is associated with, which in turn
 # determines the Cloud WAN segment it reaches through.
 variable "nvirginia_spoke_vpcs" {
   type = map(object({
-    route_table             = string
+    segment                 = string
     number_azs              = number
     cidr_block              = string
     workload_subnet_netmask = number
@@ -75,7 +64,7 @@ variable "nvirginia_spoke_vpcs" {
 
   default = {
     "prod" = {
-      route_table             = "production"
+      segment                 = "production"
       number_azs              = 2
       cidr_block              = "10.10.0.0/24"
       workload_subnet_netmask = 28
@@ -84,7 +73,7 @@ variable "nvirginia_spoke_vpcs" {
       instance_type           = "t2.micro"
     }
     "dev" = {
-      route_table             = "development"
+      segment                 = "development"
       number_azs              = 2
       cidr_block              = "10.10.1.0/24"
       workload_subnet_netmask = 28
@@ -98,7 +87,7 @@ variable "nvirginia_spoke_vpcs" {
 # Definition of the spoke VPCs to create in Ireland Region
 variable "ireland_spoke_vpcs" {
   type = map(object({
-    route_table             = string
+    segment                 = string
     number_azs              = number
     cidr_block              = string
     workload_subnet_netmask = number
@@ -110,7 +99,7 @@ variable "ireland_spoke_vpcs" {
 
   default = {
     "prod" = {
-      route_table             = "production"
+      segment                 = "production"
       number_azs              = 2
       cidr_block              = "10.0.0.0/24"
       workload_subnet_netmask = 28
@@ -119,7 +108,7 @@ variable "ireland_spoke_vpcs" {
       instance_type           = "t2.micro"
     }
     "dev" = {
-      route_table             = "development"
+      segment                 = "development"
       number_azs              = 2
       cidr_block              = "10.0.1.0/24"
       workload_subnet_netmask = 28

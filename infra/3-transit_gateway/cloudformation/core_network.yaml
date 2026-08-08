@@ -2,15 +2,10 @@
 # SPDX-License-Identifier: MIT-0
 #
 # ============================================================================
-# GENERATED FILE - DO NOT EDIT BY HAND.
+# The PolicyDocument below MUST match ../baseline.json, which is the policy this pattern shares with its Terraform implementation.
+# Change one and you must change the other - CI compares them and fails the build if they diverge.
 #
-# The PolicyDocument below is generated from baseline.json in this pattern's
-# directory, which is the single source of truth for the Cloud WAN network
-# policy. Edit baseline.json, then regenerate:
-#
-#     python3 tools/sync_cfn_policy.py <pattern-dir>
-#
-# CI fails if this file drifts from baseline.json.
+# To deploy a policy of your own, copy this template rather than editing it
 # ============================================================================
 AWSTemplateFormatVersion: 2010-09-09
 Description: AWS Cloud WAN Blueprints - Transit Gateway (global & core network)
@@ -18,7 +13,7 @@ Description: AWS Cloud WAN Blueprints - Transit Gateway (global & core network)
 Parameters:
   Identifier:
     Type: String
-    Default: 3-transit_gateway
+    Default: transit-gateway
     Description: Project identifier, used as a suffix when naming resources.
 
 Resources:
@@ -46,7 +41,9 @@ Resources:
             - 64520-64525
           edge-locations:
             - location: us-east-1
+              asn: 64520
             - location: eu-west-1
+              asn: 64521
         segments:
           - name: production
             require-attachment-acceptance: false
@@ -61,17 +58,6 @@ Resources:
               - type: attachment-type
                 operator: equals
                 value: transit-gateway-route-table
-              - type: tag-exists
-                key: domain
-            action:
-              association-method: tag
-              tag-value-of-key: domain
-          - rule-number: 200
-            condition-logic: and
-            conditions:
-              - type: attachment-type
-                operator: equals
-                value: vpc
               - type: tag-exists
                 key: domain
             action:

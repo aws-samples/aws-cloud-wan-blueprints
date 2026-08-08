@@ -14,7 +14,7 @@ Parameters:
     Default: "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64"
 
 Mappings:
-  vpc1:
+  ProdVpcCIDR:
     us-east-1:
       CIDR: 10.10.0.0/24
       EndpointSubneta: 10.10.0.0/28
@@ -31,7 +31,7 @@ Mappings:
       PrivateSubnetb: 10.0.0.48/28
       TGWSubneta: 10.0.0.64/28
       TGWSubnetb: 10.0.0.80/28
-  vpc2:
+  DevVpcCIDR:
     us-east-1:
       CIDR: 10.10.1.0/24
       EndpointSubneta: 10.10.1.0/28
@@ -48,488 +48,398 @@ Mappings:
       PrivateSubnetb: 10.0.1.48/28
       TGWSubneta: 10.0.1.64/28
       TGWSubnetb: 10.0.1.80/28
-  Ipv6SubnetIndex:
-    Endpoint:
-      a: 0
-      b: 1
-    Private:
-      a: 2
-      b: 3
-    TGW:
-      a: 4
-      b: 5
-  TransitGateway:
+  # Amazon-side ASN for the Transit Gateway. Must not overlap the asn-ranges in the policy document.
+  TransitGatewayASN:
     us-east-1:
-      ASN: 65500
+      ASN: 64532
     eu-west-1:
-      ASN: 65501
+      ASN: 64533
 
 Resources:
-  # ---------- VPC1 ----------
-  VPC1:
+  # ---------- PRODUCTION VPC ----------
+  ProductionVPC:
     Type: AWS::EC2::VPC
     Properties:
-      CidrBlock: !FindInMap [vpc1, !Ref 'AWS::Region', CIDR]
+      CidrBlock: !FindInMap [ProdVpcCIDR, !Ref 'AWS::Region', CIDR]
       Tags:
         - Key: Name
           Value: !Join
             - '-'
-            - - vpc1
+            - - prod-vpc
               - !Ref AWS::StackName
               - !Ref AWS::Region
 
-  VPC1Ipv6CidrBlock:
-    Type: AWS::EC2::VPCCidrBlock
-    Properties:
-      AmazonProvidedIpv6CidrBlock: true
-      VpcId: !Ref VPC1
-
-  # For::Each iteration: per subnet type (Endpoint, Private, CWAN) and AZ (2 AZs)
-  # Resources to create: 6 subnets, 6 route tables, 6 route table associations - obtaining AZ affinity
-  'Fn::ForEach::VPC1SubnetTypes':
+  # For::Each iteration: per subnet type (Endpoint, Private, TGW) and AZ (2 AZs)
+  # Resources to create: 6 subnets, 6 route tables, 6 route table associations - obtaining AZ affinity
+  'Fn::ForEach::ProductionSubnetTypes':
     - SubnetType
     - [Endpoint, Private, TGW]
     - '${SubnetType}':
       'Fn::ForEach::AZ':
         - AvailabilityZone
         - [a, b]
-          # Subnets
-        - 'VPC1${SubnetType}Subnet${AvailabilityZone}':
+          # Subnets
+        - 'Production${SubnetType}Subnet${AvailabilityZone}':
             Type: AWS::EC2::Subnet
-            DependsOn: VPC1Ipv6CidrBlock
             Properties:
-              VpcId: !Ref VPC1
+              VpcId: !Ref ProductionVPC
               AvailabilityZone: !Sub ${AWS::Region}${AvailabilityZone}
-              CidrBlock: !FindInMap [vpc1, !Ref 'AWS::Region', 'Fn::Sub': '${SubnetType}Subnet${AvailabilityZone}']
-              Ipv6CidrBlock: !Select
-                - !FindInMap [Ipv6SubnetIndex, !Ref SubnetType, !Ref AvailabilityZone]
-                - !Cidr
-                  - !Select [0, !GetAtt VPC1.Ipv6CidrBlocks]
-                  - 6
-                  - 64
-              AssignIpv6AddressOnCreation: true
+              CidrBlock: !FindInMap [ProdVpcCIDR, !Ref 'AWS::Region', 'Fn::Sub': '${SubnetType}Subnet${AvailabilityZone}']
               Tags:
                 - Key: Name
                   Value: !Join
                     - '-'
-                    - - !Sub vpc1-subnet-${SubnetType}-AZ${AvailabilityZone}
+                    - - !Sub prod-subnet-${SubnetType}-AZ${AvailabilityZone}
                       - !Ref AWS::StackName
           # Route Tables
-          'VPC1${SubnetType}RouteTable${AvailabilityZone}':
+          'Production${SubnetType}RouteTable${AvailabilityZone}':
             Type: AWS::EC2::RouteTable
             Properties:
-              VpcId: !Ref VPC1
+              VpcId: !Ref ProductionVPC
               Tags:
                 - Key: Name
                   Value: !Join
                     - '-'
-                    - - !Sub vpc1-rt-${SubnetType}-AZ${AvailabilityZone}
+                    - - !Sub prod-rt-${SubnetType}-AZ${AvailabilityZone}
                       - !Ref AWS::StackName
           # Route Table associations
-          'VPC1${SubnetType}RouteTableAssociation${AvailabilityZone}':
+          'Production${SubnetType}RouteTableAssociation${AvailabilityZone}':
             Type: AWS::EC2::SubnetRouteTableAssociation
             Properties:
               RouteTableId: !Ref
-                'Fn::Sub': 'VPC1${SubnetType}RouteTable${AvailabilityZone}'
+                'Fn::Sub': 'Production${SubnetType}RouteTable${AvailabilityZone}'
               SubnetId: !Ref
-                'Fn::Sub': 'VPC1${SubnetType}Subnet${AvailabilityZone}'
+                'Fn::Sub': 'Production${SubnetType}Subnet${AvailabilityZone}'
 
-  # For::Each iteration: per Availability Zone
-  # VPC1 routes to 0.0.0.0/0 (via TGW)
-  # VPC1 routes to ::/0 (via TGW)
-  'Fn::ForEach::VPC1Routes':
+  # For::Each iteration: per Availability Zone
+  # VPC routes to 0.0.0.0/0 (via the Transit Gateway)
+  'Fn::ForEach::ProductionVPCRoutes':
     - AvailabilityZone
     - [a, b]
-    - 'VPC1DefaultToTGWRoute${AvailabilityZone}':
+    - 'ProdDefaultToTGWRoute${AvailabilityZone}':
         DependsOn:
-          - VPC1TransitGatewayAttachment
+          - ProdVPCTGWAttachment
         Type: AWS::EC2::Route
         Properties:
           RouteTableId: !Ref
-            'Fn::Sub': 'VPC1PrivateRouteTable${AvailabilityZone}'
+            'Fn::Sub': 'ProductionPrivateRouteTable${AvailabilityZone}'
           DestinationCidrBlock: '0.0.0.0/0'
           TransitGatewayId: !Ref TransitGateway
-      'VPC1Ipv6DefaultToTGWRoute${AvailabilityZone}':
-        DependsOn:
-          - VPC1TransitGatewayAttachment
-        Type: AWS::EC2::Route
-        Properties:
-          RouteTableId: !Ref
-            'Fn::Sub': 'VPC1PrivateRouteTable${AvailabilityZone}'
-          DestinationIpv6CidrBlock: '::/0'
-          TransitGatewayId: !Ref TransitGateway
 
-  # Transit Gateway Attachment
-  VPC1TransitGatewayAttachment:
+  # Transit Gateway attachment
+  ProdVPCTGWAttachment:
     Type: AWS::EC2::TransitGatewayAttachment
     Properties:
+      TransitGatewayId: !Ref TransitGateway
+      VpcId: !Ref ProductionVPC
       SubnetIds:
-        - !Ref VPC1TGWSubneta
-        - !Ref VPC1TGWSubnetb
+        - !Ref ProductionTGWSubneta
+        - !Ref ProductionTGWSubnetb
       Tags:
         - Key: Name
           Value: !Join
             - '-'
-            - - vpc1-tgw-attachment
+            - - prod-tgw-attachment
               - !Ref AWS::StackName
-      TransitGatewayId: !Ref TransitGateway
-      VpcId: !Ref VPC1
+              - !Ref AWS::Region
 
-  # Transit Gateway Route Table association
-  VPC1TransitGatewayAssociation:
+  # Transit Gateway route table association - selects the segment this VPC reaches through
+  ProdTGWRouteTableAssociation:
     Type: AWS::EC2::TransitGatewayRouteTableAssociation
     Properties:
-      TransitGatewayAttachmentId: !Ref VPC1TransitGatewayAttachment
-      TransitGatewayRouteTableId: !Ref TransitGatewayRouteTable
+      TransitGatewayAttachmentId: !Ref ProdVPCTGWAttachment
+      TransitGatewayRouteTableId: !Ref ProductionTransitGatewayRouteTable
 
-  # Transit Gateway Route Table propagation
-  VPC1TransitGatewayPropagation:
+  # Transit Gateway route table propagation
+  ProdTGWRouteTablePropagation:
     Type: AWS::EC2::TransitGatewayRouteTablePropagation
     Properties:
-      TransitGatewayAttachmentId: !Ref VPC1TransitGatewayAttachment
-      TransitGatewayRouteTableId: !Ref TransitGatewayRouteTable
+      TransitGatewayAttachmentId: !Ref ProdVPCTGWAttachment
+      TransitGatewayRouteTableId: !Ref ProductionTransitGatewayRouteTable
 
   # Security Groups (Instances and EC2 Instance Connect endpoint)
-  VPC1InstanceSecurityGroup:
+  VPCProdInstanceSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: VPC1 - Instance Security Group
-      VpcId: !Ref VPC1
+      GroupDescription: Production VPC - Instance Security Group
+      VpcId: !Ref ProductionVPC
 
-  VPC1InstanceSecurityGroupIngressICMP:
+  VPCProdInstanceSecurityGroupIngressICMP:
     Type: AWS::EC2::SecurityGroupIngress
     Properties:
-      GroupId: !Ref VPC1InstanceSecurityGroup
+      GroupId: !Ref VPCProdInstanceSecurityGroup
       Description: Allowing ICMP traffic
       IpProtocol: icmp
       FromPort: -1
       ToPort: -1
       CidrIp: 10.0.0.0/8
 
-  VPC1InstanceSecurityGroupIngressICMPv6:
+  VPCProdInstanceSecurityGroupIngressEIC:
     Type: AWS::EC2::SecurityGroupIngress
     Properties:
-      GroupId: !Ref VPC1InstanceSecurityGroup
-      Description: Allowing ICMPv6 traffic
-      IpProtocol: icmpv6
-      CidrIpv6: ::/0
-
-  VPC1InstanceSecurityGroupIngressEIC:
-    Type: AWS::EC2::SecurityGroupIngress
-    Properties:
-      GroupId: !Ref VPC1InstanceSecurityGroup
+      GroupId: !Ref VPCProdInstanceSecurityGroup
       Description: Allowing EIC connection
       IpProtocol: tcp
       FromPort: 22
       ToPort: 22
-      SourceSecurityGroupId: !Ref VPC1EndpointSecurityGroup
+      SourceSecurityGroupId: !Ref VPCProdEndpointSecurityGroup
 
-  VPC1InstanceSecurityGroupEgress:
+  VPCProdInstanceSecurityGroupEgress:
     Type: AWS::EC2::SecurityGroupEgress
     Properties:
-      GroupId: !Ref VPC1InstanceSecurityGroup
+      GroupId: !Ref VPCProdInstanceSecurityGroup
       Description: Allowing egress traffic
       IpProtocol: -1
       CidrIp: 0.0.0.0/0
 
-  VPC1InstanceSecurityGroupEgressIPv6:
-    Type: AWS::EC2::SecurityGroupEgress
-    Properties:
-      GroupId: !Ref VPC1InstanceSecurityGroup
-      Description: Allowing egress traffic IPv6
-      IpProtocol: -1
-      CidrIpv6: ::/0
-
-  VPC1EndpointSecurityGroup:
+  VPCProdEndpointSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: VPC1 - Endpoints Security Group
-      VpcId: !Ref VPC1
+      GroupDescription: Production VPC - Endpoints Security Group
+      VpcId: !Ref ProductionVPC
 
-  VPC1EndpointSecurityGroupEgressEIC:
+  VPCProdEndpointSecurityGroupEgressEIC:
     Type: AWS::EC2::SecurityGroupEgress
     Properties:
-      GroupId: !Ref VPC1EndpointSecurityGroup
+      GroupId: !Ref VPCProdEndpointSecurityGroup
       Description: Allowing EIC connection
       IpProtocol: tcp
       FromPort: 22
       ToPort: 22
-      DestinationSecurityGroupId: !Ref VPC1InstanceSecurityGroup
+      DestinationSecurityGroupId: !Ref VPCProdInstanceSecurityGroup
 
-  # # For::Each iteration: per AZ (2 AZs)
-  # # EC2 Instances
-  'Fn::ForEach::VPC1Instances':
+  # For::Each iteration: per AZ (2 AZs)
+  # EC2 Instances
+  'Fn::ForEach::ProductionInstances':
     - AvailabilityZone
     - [a, b]
-    - 'VPC1Instance${AvailabilityZone}':
+    - 'ProdInstance${AvailabilityZone}':
         Type: AWS::EC2::Instance
         Properties:
           InstanceType: t2.micro
           SecurityGroupIds:
-            - !Ref VPC1InstanceSecurityGroup
+            - !Ref VPCProdInstanceSecurityGroup
           SubnetId: !Ref
-            'Fn::Sub': 'VPC1PrivateSubnet${AvailabilityZone}'
+            'Fn::Sub': 'ProductionPrivateSubnet${AvailabilityZone}'
           ImageId: !Ref LatestAmiId
           Tags:
             - Key: Name
               Value: !Join
                 - '-'
-                - - !Sub vpc1-instance-${AvailabilityZone}
+                - - !Sub prod-instance-${AvailabilityZone}
                   - !Ref AWS::StackName
 
   # EC2 Instance Connect Endpoint
-  VPC1EICEndpoint:
+  ProdEICEndpoint:
     Type: AWS::EC2::InstanceConnectEndpoint
     Properties:
       PreserveClientIp: false
       SecurityGroupIds:
-        - !Ref VPC1EndpointSecurityGroup
-      SubnetId: !Ref VPC1EndpointSubneta
+        - !Ref VPCProdEndpointSecurityGroup
+      SubnetId: !Ref ProductionEndpointSubneta
       Tags:
         - Key: Name
-          Value : !Join
+          Value: !Join
             - '-'
-            - - !Sub vpc1-eic
+            - - prod-eic
               - !Ref AWS::StackName
 
   # ---------- DEVELOPMENT VPC ----------
-  VPC2:
+  DevelopmentVPC:
     Type: AWS::EC2::VPC
     Properties:
-      CidrBlock: !FindInMap [vpc2, !Ref 'AWS::Region', CIDR]
+      CidrBlock: !FindInMap [DevVpcCIDR, !Ref 'AWS::Region', CIDR]
       Tags:
         - Key: Name
           Value: !Join
             - '-'
-            - - vpc2
+            - - dev-vpc
               - !Ref AWS::StackName
               - !Ref AWS::Region
 
-  VPC2Ipv6CidrBlock:
-    Type: AWS::EC2::VPCCidrBlock
-    Properties:
-      AmazonProvidedIpv6CidrBlock: true
-      VpcId: !Ref VPC2
-
-  # For::Each iteration: per subnet type (Endpoint, Private, CWAN) and AZ (2 AZs)
-  # Resources to create: 6 subnets, 6 route tables, 6 route table associations - obtaining AZ affinity
-  'Fn::ForEach::VPC2SubnetTypes':
+  # For::Each iteration: per subnet type (Endpoint, Private, TGW) and AZ (2 AZs)
+  # Resources to create: 6 subnets, 6 route tables, 6 route table associations - obtaining AZ affinity
+  'Fn::ForEach::DevelopmentSubnetTypes':
     - SubnetType
     - [Endpoint, Private, TGW]
     - '${SubnetType}':
       'Fn::ForEach::AZ':
         - AvailabilityZone
         - [a, b]
-          # Subnets
-        - 'VPC2${SubnetType}Subnet${AvailabilityZone}':
+          # Subnets
+        - 'Development${SubnetType}Subnet${AvailabilityZone}':
             Type: AWS::EC2::Subnet
-            DependsOn: VPC2Ipv6CidrBlock
             Properties:
-              VpcId: !Ref VPC2
+              VpcId: !Ref DevelopmentVPC
               AvailabilityZone: !Sub ${AWS::Region}${AvailabilityZone}
-              CidrBlock: !FindInMap [vpc2, !Ref 'AWS::Region', 'Fn::Sub': '${SubnetType}Subnet${AvailabilityZone}']
-              Ipv6CidrBlock: !Select
-                - !FindInMap [Ipv6SubnetIndex, !Ref SubnetType, !Ref AvailabilityZone]
-                - !Cidr
-                  - !Select [0, !GetAtt VPC2.Ipv6CidrBlocks]
-                  - 6
-                  - 64
-              AssignIpv6AddressOnCreation: true
+              CidrBlock: !FindInMap [DevVpcCIDR, !Ref 'AWS::Region', 'Fn::Sub': '${SubnetType}Subnet${AvailabilityZone}']
               Tags:
                 - Key: Name
                   Value: !Join
                     - '-'
-                    - - !Sub vpc2-subnet-${SubnetType}-AZ${AvailabilityZone}
+                    - - !Sub dev-subnet-${SubnetType}-AZ${AvailabilityZone}
                       - !Ref AWS::StackName
           # Route Tables
-          'VPC2${SubnetType}RouteTable${AvailabilityZone}':
+          'Development${SubnetType}RouteTable${AvailabilityZone}':
             Type: AWS::EC2::RouteTable
             Properties:
-              VpcId: !Ref VPC2
+              VpcId: !Ref DevelopmentVPC
               Tags:
                 - Key: Name
                   Value: !Join
                     - '-'
-                    - - !Sub vpc2-rt-${SubnetType}-AZ${AvailabilityZone}
+                    - - !Sub dev-rt-${SubnetType}-AZ${AvailabilityZone}
                       - !Ref AWS::StackName
           # Route Table associations
-          'VPC2${SubnetType}RouteTableAssociation${AvailabilityZone}':
+          'Development${SubnetType}RouteTableAssociation${AvailabilityZone}':
             Type: AWS::EC2::SubnetRouteTableAssociation
             Properties:
               RouteTableId: !Ref
-                'Fn::Sub': 'VPC2${SubnetType}RouteTable${AvailabilityZone}'
+                'Fn::Sub': 'Development${SubnetType}RouteTable${AvailabilityZone}'
               SubnetId: !Ref
-                'Fn::Sub': 'VPC2${SubnetType}Subnet${AvailabilityZone}'
+                'Fn::Sub': 'Development${SubnetType}Subnet${AvailabilityZone}'
 
-  # For::Each iteration: per Availability Zone
-  # VPC2 routes to 0.0.0.0/0 (via TGW)
-  # VPC2 routes to ::/0 (via TGW)
-  'Fn::ForEach::VPC2Routes':
+  # For::Each iteration: per Availability Zone
+  # VPC routes to 0.0.0.0/0 (via the Transit Gateway)
+  'Fn::ForEach::DevelopmentVPCRoutes':
     - AvailabilityZone
     - [a, b]
-    - 'VPC2DefaultToTGWRoute${AvailabilityZone}':
+    - 'DevDefaultToTGWRoute${AvailabilityZone}':
         DependsOn:
-          - VPC2TransitGatewayAttachment
+          - DevVPCTGWAttachment
         Type: AWS::EC2::Route
         Properties:
           RouteTableId: !Ref
-            'Fn::Sub': 'VPC2PrivateRouteTable${AvailabilityZone}'
+            'Fn::Sub': 'DevelopmentPrivateRouteTable${AvailabilityZone}'
           DestinationCidrBlock: '0.0.0.0/0'
           TransitGatewayId: !Ref TransitGateway
-      'VPC2Ipv6DefaultToTGWRoute${AvailabilityZone}':
-        DependsOn:
-          - VPC2TransitGatewayAttachment
-        Type: AWS::EC2::Route
-        Properties:
-          RouteTableId: !Ref
-            'Fn::Sub': 'VPC2PrivateRouteTable${AvailabilityZone}'
-          DestinationIpv6CidrBlock: '::/0'
-          TransitGatewayId: !Ref TransitGateway
 
-  # Transit Gateway Attachment
-  VPC2TransitGatewayAttachment:
+  # Transit Gateway attachment
+  DevVPCTGWAttachment:
     Type: AWS::EC2::TransitGatewayAttachment
     Properties:
+      TransitGatewayId: !Ref TransitGateway
+      VpcId: !Ref DevelopmentVPC
       SubnetIds:
-        - !Ref VPC2TGWSubneta
-        - !Ref VPC2TGWSubnetb
+        - !Ref DevelopmentTGWSubneta
+        - !Ref DevelopmentTGWSubnetb
       Tags:
         - Key: Name
           Value: !Join
             - '-'
-            - - vpc2-tgw-attachment
+            - - dev-tgw-attachment
               - !Ref AWS::StackName
-      TransitGatewayId: !Ref TransitGateway
-      VpcId: !Ref VPC2
+              - !Ref AWS::Region
 
-  # Transit Gateway Route Table association
-  VPC2TransitGatewayAssociation:
+  # Transit Gateway route table association - selects the segment this VPC reaches through
+  DevTGWRouteTableAssociation:
     Type: AWS::EC2::TransitGatewayRouteTableAssociation
     Properties:
-      TransitGatewayAttachmentId: !Ref VPC2TransitGatewayAttachment
-      TransitGatewayRouteTableId: !Ref TransitGatewayRouteTable
+      TransitGatewayAttachmentId: !Ref DevVPCTGWAttachment
+      TransitGatewayRouteTableId: !Ref DevelopmentTransitGatewayRouteTable
 
-  # Transit Gateway Route Table propagation
-  VPC2TransitGatewayPropagation:
+  # Transit Gateway route table propagation
+  DevTGWRouteTablePropagation:
     Type: AWS::EC2::TransitGatewayRouteTablePropagation
     Properties:
-      TransitGatewayAttachmentId: !Ref VPC2TransitGatewayAttachment
-      TransitGatewayRouteTableId: !Ref TransitGatewayRouteTable
+      TransitGatewayAttachmentId: !Ref DevVPCTGWAttachment
+      TransitGatewayRouteTableId: !Ref DevelopmentTransitGatewayRouteTable
 
   # Security Groups (Instances and EC2 Instance Connect endpoint)
-  VPC2InstanceSecurityGroup:
+  VPCDevInstanceSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: VPC2 - Instance Security Group
-      VpcId: !Ref VPC2
+      GroupDescription: Development VPC - Instance Security Group
+      VpcId: !Ref DevelopmentVPC
 
-  VPC2InstanceSecurityGroupIngressICMP:
+  VPCDevInstanceSecurityGroupIngressICMP:
     Type: AWS::EC2::SecurityGroupIngress
     Properties:
-      GroupId: !Ref VPC2InstanceSecurityGroup
+      GroupId: !Ref VPCDevInstanceSecurityGroup
       Description: Allowing ICMP traffic
       IpProtocol: icmp
       FromPort: -1
       ToPort: -1
       CidrIp: 10.0.0.0/8
 
-  VPC2InstanceSecurityGroupIngressICMPv6:
+  VPCDevInstanceSecurityGroupIngressEIC:
     Type: AWS::EC2::SecurityGroupIngress
     Properties:
-      GroupId: !Ref VPC2InstanceSecurityGroup
-      Description: Allowing ICMPv6 traffic
-      IpProtocol: icmpv6
-      CidrIpv6: ::/0
-
-  VPC2InstanceSecurityGroupIngressEIC:
-    Type: AWS::EC2::SecurityGroupIngress
-    Properties:
-      GroupId: !Ref VPC2InstanceSecurityGroup
+      GroupId: !Ref VPCDevInstanceSecurityGroup
       Description: Allowing EIC connection
       IpProtocol: tcp
       FromPort: 22
       ToPort: 22
-      SourceSecurityGroupId: !Ref VPC2EndpointSecurityGroup
+      SourceSecurityGroupId: !Ref VPCDevEndpointSecurityGroup
 
-  VPC2InstanceSecurityGroupEgress:
+  VPCDevInstanceSecurityGroupEgress:
     Type: AWS::EC2::SecurityGroupEgress
     Properties:
-      GroupId: !Ref VPC2InstanceSecurityGroup
+      GroupId: !Ref VPCDevInstanceSecurityGroup
       Description: Allowing egress traffic
       IpProtocol: -1
       CidrIp: 0.0.0.0/0
 
-  VPC2InstanceSecurityGroupEgressIPv6:
-    Type: AWS::EC2::SecurityGroupEgress
-    Properties:
-      GroupId: !Ref VPC2InstanceSecurityGroup
-      Description: Allowing egress traffic IPv6
-      IpProtocol: -1
-      CidrIpv6: ::/0
-
-  VPC2EndpointSecurityGroup:
+  VPCDevEndpointSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: VPC2 - Endpoints Security Group
-      VpcId: !Ref VPC2
+      GroupDescription: Development VPC - Endpoints Security Group
+      VpcId: !Ref DevelopmentVPC
 
-  VPC2EndpointSecurityGroupEgressEIC:
+  VPCDevEndpointSecurityGroupEgressEIC:
     Type: AWS::EC2::SecurityGroupEgress
     Properties:
-      GroupId: !Ref VPC2EndpointSecurityGroup
+      GroupId: !Ref VPCDevEndpointSecurityGroup
       Description: Allowing EIC connection
       IpProtocol: tcp
       FromPort: 22
       ToPort: 22
-      DestinationSecurityGroupId: !Ref VPC2InstanceSecurityGroup
+      DestinationSecurityGroupId: !Ref VPCDevInstanceSecurityGroup
 
-  # # For::Each iteration: per AZ (2 AZs)
-  # # EC2 Instances
-  'Fn::ForEach::VPC2Instances':
+  # For::Each iteration: per AZ (2 AZs)
+  # EC2 Instances
+  'Fn::ForEach::DevelopmentInstances':
     - AvailabilityZone
     - [a, b]
-    - 'VPC2Instance${AvailabilityZone}':
+    - 'DevInstance${AvailabilityZone}':
         Type: AWS::EC2::Instance
         Properties:
           InstanceType: t2.micro
           SecurityGroupIds:
-            - !Ref VPC2InstanceSecurityGroup
+            - !Ref VPCDevInstanceSecurityGroup
           SubnetId: !Ref
-            'Fn::Sub': 'VPC2PrivateSubnet${AvailabilityZone}'
+            'Fn::Sub': 'DevelopmentPrivateSubnet${AvailabilityZone}'
           ImageId: !Ref LatestAmiId
           Tags:
             - Key: Name
               Value: !Join
                 - '-'
-                - - !Sub vpc2-instance-${AvailabilityZone}
+                - - !Sub dev-instance-${AvailabilityZone}
                   - !Ref AWS::StackName
 
   # EC2 Instance Connect Endpoint
-  VPC2EICEndpoint:
+  DevEICEndpoint:
     Type: AWS::EC2::InstanceConnectEndpoint
     Properties:
       PreserveClientIp: false
       SecurityGroupIds:
-        - !Ref VPC2EndpointSecurityGroup
-      SubnetId: !Ref VPC2EndpointSubneta
+        - !Ref VPCDevEndpointSecurityGroup
+      SubnetId: !Ref DevelopmentEndpointSubneta
       Tags:
         - Key: Name
-          Value : !Join
+          Value: !Join
             - '-'
-            - - !Sub vpc2-eic
+            - - dev-eic
               - !Ref AWS::StackName
 
   # ---------- TRANSIT GATEWAY ----------
   TransitGateway:
     Type: AWS::EC2::TransitGateway
     Properties:
-      AmazonSideAsn: !FindInMap [TransitGateway, !Ref 'AWS::Region', ASN]
+      AmazonSideAsn: !FindInMap [TransitGatewayASN, !Ref 'AWS::Region', ASN]
       DefaultRouteTableAssociation: disable
       DefaultRouteTablePropagation: disable
-      Description: !Join
-        - '-'
-        - - Transit Gateway
-          - !Ref AWS::StackName
+      Description: !Sub 'Transit Gateway - ${AWS::Region}'
       Tags:
         - Key: Name
           Value: !Join
@@ -538,8 +448,8 @@ Resources:
               - !Ref 'AWS::Region'
               - !Ref AWS::StackName
 
-  # Route Table
-  TransitGatewayRouteTable:
+  # One route table per segment
+  ProductionTransitGatewayRouteTable:
     Type: AWS::EC2::TransitGatewayRouteTable
     Properties:
       TransitGatewayId: !Ref TransitGateway
@@ -547,365 +457,86 @@ Resources:
         - Key: Name
           Value: !Join
             - '-'
-            - - tgw-rt
+            - - tgw-rt-production
               - !Ref 'AWS::Region'
               - !Ref AWS::StackName
 
-  # Cloud WAN - Transit Gateway peering
-  TGWCWANPeering:
-    Type: AWS::NetworkManager::TransitGatewayPeering
+  DevelopmentTransitGatewayRouteTable:
+    Type: AWS::EC2::TransitGatewayRouteTable
     Properties:
-      CoreNetworkId: !Ref CoreNetworkId
-      TransitGatewayArn: !Join
-        - ":"
-        - - "arn:aws:ec2"
-          - !Ref AWS::Region
-          - !Ref AWS::AccountId
-          - !Join
-            - "/"
-            - - "transit-gateway"
-              - !GetAtt TransitGateway.Id
-      Tags:
-        - Key: Name
-          Value: !Join
-            - "-"
-            - - "peering"
-              - !Ref AWS::Region
-
-  # TGW Policy Table and peering association (Custom Resource)
-  TGWPolicyTable:
-    Type: Custom::TGWPolicyTable
-    Properties:
-      ServiceToken: !GetAtt TGWPolicyTableFunction.Arn
-      TransitGatewayId: !GetAtt TransitGateway.Id
-      TGWPeeringAttachmentId: !GetAtt TGWCWANPeering.TransitGatewayPeeringAttachmentId
-
-  # TGW RT Core Network Attachment
-  TGWRTAttachment:
-    Type: AWS::NetworkManager::TransitGatewayRouteTableAttachment
-    DependsOn:
-      - TGWPolicyTable
-    Properties:
-      PeeringId: !Ref TGWCWANPeering
-      RoutingPolicyLabel: tgwAttachment
-      TransitGatewayRouteTableArn: !Join
-        - ":"
-        - - "arn:aws:ec2"
-          - !Ref AWS::Region
-          - !Ref AWS::AccountId
-          - !Join
-            - "/"
-            - - "transit-gateway-route-table"
-              - !Ref TransitGatewayRouteTable
+      TransitGatewayId: !Ref TransitGateway
       Tags:
         - Key: Name
           Value: !Join
             - '-'
-            - - !Sub tgw-rt-attachment
-              - !Ref AWS::Region
+            - - tgw-rt-development
+              - !Ref 'AWS::Region'
+              - !Ref AWS::StackName
 
-  # ---------- CUSTOM RESOURCE: TGW POLICY TABLE AND PEERING ASSOCIATION ----------
-  TGWPolicyTableCustomResourcesRole:
-    Type: AWS::IAM::Role
+  # ---------- CLOUD WAN PEERING ----------
+  TGWCWANPeering:
+    Type: AWS::NetworkManager::TransitGatewayPeering
     Properties:
-      AssumeRolePolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service:
-                - lambda.amazonaws.com
-            Action:
-              - sts:AssumeRole
-      Policies:
-        - PolicyName: AllowTGWNetworkManager
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: Allow
-                Action:
-                  - "ec2:CreateTransitGatewayPolicyTable"
-                  - "ec2:AssociateTransitGatewayPolicyTable"
-                  - "ec2:DisassociateTransitGatewayPolicyTable"
-                  - "ec2:DeleteTransitGatewayPolicyTable"
-                  - "ec2:DescribeTransitGatewayPolicyTables"
-                  - "ec2:DescribeRegions"
-                  - "ec2:GetTransitGatewayPolicyTableAssociations"
-                  - "ec2:GetTransitGatewayPolicyTableEntries"
-                  - "ec2:CreateTags"
-                Resource:
-                  - "*"
-      ManagedPolicyArns:
-        - !Sub arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      CoreNetworkId: !Ref CoreNetworkId
+      TransitGatewayArn: !Sub 'arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:transit-gateway/${TransitGateway}'
+      Tags:
+        - Key: Name
+          Value: !Join
+            - '-'
+            - - tgw-cwan-peering
+              - !Ref 'AWS::Region'
+              - !Ref AWS::StackName
 
-  TGWPolicyTableFunctionLogGroup:
-    Metadata:
-      cfn_nag:
-        rules_to_suppress:
-          - id: W84
-            reason: Encryption not required for this log group
-    Type: AWS::Logs::LogGroup
+  # A policy table associated with the peering is required before any route table attachment
+  TGWPolicyTable:
+    Type: AWS::EC2::TransitGatewayPolicyTable
     Properties:
-      LogGroupName: !Sub /aws/lambda/${TGWPolicyTableFunction}
-      RetentionInDays: 7
+      TransitGatewayId: !Ref TransitGateway
+      Tags:
+        - Key: Name
+          Value: !Join
+            - '-'
+            - - tgw-policy-table
+              - !Ref 'AWS::Region'
+              - !Ref AWS::StackName
 
-  TGWPolicyTableFunction:
-    Metadata:
-      cfn_nag:
-        rules_to_suppress:
-          - id: W58
-            reason: CWL permissions granted by use of AWSLambdaBasicExecutionRole
-          - id: W89
-            reason: No requirement for this function to be in a VPC
-          - id: W92
-            reason: No requirement to limit simultaneous executions
-    Type: AWS::Lambda::Function
+  TGWPolicyTableAssociation:
+    Type: AWS::EC2::TransitGatewayPolicyTableAssociation
     Properties:
-      Description: Create TGW Policy Table and associate it to Cloud WAN peering
-      Runtime: python3.12
-      Timeout: 900
-      Role: !GetAtt TGWPolicyTableCustomResourcesRole.Arn
-      Handler: index.lambda_handler
-      Code:
-        ZipFile: |-
-          import sys
-          import subprocess
-          from pip._internal import main
+      TransitGatewayAttachmentId: !GetAtt TGWCWANPeering.TransitGatewayPeeringAttachmentId
+      TransitGatewayPolicyTableId: !GetAtt TGWPolicyTable.TransitGatewayPolicyTableId
 
-          # pip3 install - update boto3 to latest version
-          subprocess.call('pip3 install -I -q boto3 -t /tmp/ --no-cache-dir --disable-pip-version-check'.split(), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-          sys.path.insert(1, '/tmp/')
+  # Cloud WAN attachments - the domain tag is what the attachment policy matches on
+  ProdCWANAttachment:
+    Type: AWS::NetworkManager::TransitGatewayRouteTableAttachment
+    DependsOn:
+      - TGWPolicyTableAssociation
+    Properties:
+      PeeringId: !Ref TGWCWANPeering
+      TransitGatewayRouteTableArn: !Sub 'arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:transit-gateway-route-table/${ProductionTransitGatewayRouteTable}'
+      Tags:
+        - Key: Name
+          Value: !Join
+            - '-'
+            - - tgw-rt-attachment-production
+              - !Ref 'AWS::Region'
+              - !Ref AWS::StackName
+        - Key: domain
+          Value: production
 
-          import boto3
-          import os
-          import logging
-          import json
-          import time
-          import cfnresponse
-          from botocore.config import Config
-          from botocore.exceptions import ClientError
-
-          log = logging.getLogger("handler")
-          log.setLevel(logging.INFO)
-
-          def lambda_handler(event, context):
-              try:
-                  log.info("Received event: %s", json.dumps(event))
-                  log.info(boto3.__version__)
-
-                  # We obtain the parameters from the Custom Resource Event
-                  action = event["RequestType"]
-                  tgw_id = event["ResourceProperties"]["TransitGatewayId"]
-                  tgw_peering_attachment_id = event["ResourceProperties"]["TGWPeeringAttachmentId"]
-                  # We obtain the AWS Region
-                  region = os.environ['AWS_REGION']
-
-                  # boto3 client configuration
-                  ec2 = boto3.client("ec2")
-
-                  response = {}
-
-                  # Actions to perform if we are creating the resources
-                  if action == "Create":
-                      log.info("Creating transit gateway policy table for transit gateway %s", tgw_id)
-                      response = create_tgw_policytable(ec2, tgw_id, tgw_peering_attachment_id, region)
-
-                  if action == "Delete":
-                      log.info("Deleting transit gateway policy table for transit gateway %s", tgw_id)
-                      response = delete_tgw_policytable(ec2, tgw_id, tgw_peering_attachment_id, region)
-
-                  if action == "Update":
-                      log.info("Updating transit gateway policy table for tgw %s", tgw_id)
-                      # Getting the previous values of the TGW and Core Network
-                      old_tgw_peering_attachment_id = event["OldResourceProperties"]["TGWPeeringAttachmentId"]
-                      # Update TGW Policy Table association
-                      response = update_tgw_peering_attachment(ec2, tgw_id, old_tgw_peering_attachment_id, tgw_peering_attachment_id, region)
-
-                  if "Return" in response:
-                      if response["Return"]:
-                          cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
-                          return
-                      cfnresponse.send(
-                          event, context, cfnresponse.FAILED, {}, reason="API request failed"
-                      )
-                      return
-
-                  cfnresponse.send(event, context, cfnresponse.SUCCESS, response)
-                  log.info(response)
-
-              except:
-                  log.exception("whoops")
-                  cfnresponse.send(
-                      event,
-                      context,
-                      cfnresponse.FAILED,
-                      {},
-                      reason="Caught exception, check logs",
-                  )
-
-          def create_tgw_policytable(ec2, tgw_id, tgw_peering_attachment_id, region):
-              try:
-                  # Initialization of the response
-                  response = {}
-
-                  # Create TGW policy table
-                  tgw_policy_table_id = ec2.create_transit_gateway_policy_table(
-                      TransitGatewayId=tgw_id,
-                      TagSpecifications=[
-                          {
-                              'ResourceType': 'transit-gateway-policy-table',
-                              'Tags': [
-                                  {
-                                      'Key': 'Name',
-                                      'Value': f'tgw-policy-table-{region}'
-                                  },
-                              ]
-                          },
-                      ]
-                  )['TransitGatewayPolicyTable']['TransitGatewayPolicyTableId']
-                  # Adding TGW Policy Table ID in response
-                  response['TransitGatewayPolicyTableId'] = tgw_policy_table_id
-
-                  # We associate the Policy Table with the Peering (via the TGW Attachment ID)
-                  association_state = ec2.associate_transit_gateway_policy_table(
-                      TransitGatewayPolicyTableId=tgw_policy_table_id,
-                      TransitGatewayAttachmentId=tgw_peering_attachment_id
-                  )['Association']['State']
-                  # Waiting for the association to be available
-                  while association_state == "associating":
-                      time.sleep(5)
-                      association_state = ec2.get_transit_gateway_policy_table_associations(TransitGatewayPolicyTableId=tgw_policy_table_id)['Associations'][0]['State']
-
-                  log.info("EVERYTHING CREATED")
-                  return response
-
-              except Exception as e:
-                  log.exception("whoops")
-                  cfnresponse.send(
-                      event,
-                      context,
-                      cfnresponse.FAILED,
-                      {},
-                      reason="Caught exception, check logs",
-                  )
-
-          def delete_tgw_policytable(ec2, tgw_id, tgw_peering_attachment_id, region):
-              try:
-                  # Initialization of the response
-                  response = {}
-
-                  # We get the Transit Gateway Policy Table ID
-                  tgw_policy_table_id = ec2.describe_transit_gateway_policy_tables(
-                      Filters=[
-                          {
-                              'Name': 'transit-gateway-id',
-                              'Values': [tgw_id]
-                          },
-                          {
-                              'Name': 'state',
-                              'Values': ['available']
-                          },
-                          {
-                              'Name': 'tag-key',
-                              'Values': ['Name']
-                          },
-                          {
-                              'Name': 'tag-value',
-                              'Values': [f'tgw-policy-table-{region}']
-                          }
-                      ]
-                  )['TransitGatewayPolicyTables'][0]['TransitGatewayPolicyTableId']
-                  # Adding the TGW Policy Table ID in the response
-                  response['TransitGatewayPolicyTableId'] = tgw_policy_table_id
-
-                  # We disassociate the Transit Gateway Policy Table from the Peering
-                  disassociation_state = ec2.disassociate_transit_gateway_policy_table(
-                      TransitGatewayPolicyTableId=tgw_policy_table_id,
-                      TransitGatewayAttachmentId=tgw_peering_attachment_id
-                  )['Association']['State']
-                  # We wait for the disassociation to finish
-                  while disassociation_state == "disassociating":
-                      time.sleep(5)
-                      disassociation_state = ec2.describe_transit_gateway_policy_tables(
-                          TransitGatewayPolicyTableIds = [tgw_policy_table_id]
-                      )["TransitGatewayPolicyTables"][0]["State"]
-
-                  # We delete the Transit Gateway Policy Table
-                  delete_tgw_policy_table = ec2.delete_transit_gateway_policy_table(TransitGatewayPolicyTableId=tgw_policy_table_id)
-
-                  log.info("EVERYTHING DELETED")
-                  return response
-
-              except Exception as e:
-                  log.exception("whoops")
-                  cfnresponse.send(
-                      event,
-                      context,
-                      cfnresponse.FAILED,
-                      {},
-                      reason="Caught exception, check logs",
-                  )
-
-          def update_tgw_peering_attachment(ec2, tgw_id, old_tgw_peering_attachment_id, tgw_peering_attachment_id, region):
-            try:
-                # Initialization of the response
-                response = {}
-
-                # We get the Transit Gateway Policy Table ID
-                tgw_policy_table_id = ec2.describe_transit_gateway_policy_tables(
-                    Filters=[
-                        {
-                            'Name': 'transit-gateway-id',
-                            'Values': [tgw_id]
-                        },
-                        {
-                            'Name': 'state',
-                            'Values': ['available']
-                        },
-                        {
-                            'Name': 'tag-key',
-                            'Values': ['Name']
-                        },
-                        {
-                            'Name': 'tag-value',
-                            'Values': [f'tgw-policy-table-{region}']
-                        }
-                    ]
-                )['TransitGatewayPolicyTables'][0]['TransitGatewayPolicyTableId']
-                # Adding the TGW Policy Table ID in the response
-                response['TransitGatewayPolicyTableId'] = tgw_policy_table_id
-
-                # We dissassociate the Policy Table from the old Transit Gateway Peering Attachment ID
-                disassociation_state = ec2.disassociate_transit_gateway_policy_table(
-                    TransitGatewayPolicyTableId=tgw_policy_table_id,
-                    TransitGatewayAttachmentId=old_tgw_peering_attachment_id
-                )['Association']['State']
-                # We wait for the disassociation to finish
-                while disassociation_state == "disassociating":
-                    time.sleep(5)
-                    disassociation_state = ec2.describe_transit_gateway_policy_tables(
-                        TransitGatewayPolicyTableIds = [tgw_policy_table_id]
-                    )["TransitGatewayPolicyTables"][0]["State"]
-
-                # We associate the Policy Table to the new Transit Gateway Peering Attachment ID
-                association_state = ec2.associate_transit_gateway_policy_table(
-                    TransitGatewayPolicyTableId=tgw_policy_table_id,
-                    TransitGatewayAttachmentId=tgw_peering_attachment_id
-                )['Association']['State']
-                # Waiting for the association to be available
-                while association_state == "associating":
-                    time.sleep(5)
-                    association_state = ec2.get_transit_gateway_policy_table_associations(TransitGatewayPolicyTableId=tgw_policy_table_id)['Associations'][0]['State']
-
-                log.info("EVERYTHING CREATED")
-                return response
-
-            except Exception as e:
-                log.exception("whoops")
-                cfnresponse.send(
-                    event,
-                    context,
-                    cfnresponse.FAILED,
-                    {},
-                    reason="Caught exception, check logs",
-                )
+  DevCWANAttachment:
+    Type: AWS::NetworkManager::TransitGatewayRouteTableAttachment
+    DependsOn:
+      - TGWPolicyTableAssociation
+    Properties:
+      PeeringId: !Ref TGWCWANPeering
+      TransitGatewayRouteTableArn: !Sub 'arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:transit-gateway-route-table/${DevelopmentTransitGatewayRouteTable}'
+      Tags:
+        - Key: Name
+          Value: !Join
+            - '-'
+            - - tgw-rt-attachment-development
+              - !Ref 'AWS::Region'
+              - !Ref AWS::StackName
+        - Key: domain
+          Value: development

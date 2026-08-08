@@ -17,9 +17,6 @@ resource "awscc_networkmanager_global_network" "global_network" {
 }
 
 # Core Network
-#
-# The policy document is read from a file so that the SAME document is consumed by both
-# this Terraform and the CloudFormation implementation. See V2.md section 6.
 resource "awscc_networkmanager_core_network" "core_network" {
   provider = awscc.awsccnvirginia
 
@@ -34,11 +31,42 @@ resource "awscc_networkmanager_core_network" "core_network" {
 }
 
 # ---------- RESOURCES IN N. VIRGINIA ----------
-# Spoke VPCs.
-#
-# These attach to the TRANSIT GATEWAY, not to Cloud WAN. Compare with 1-basic and
-# 2-inspection, where the VPC module is given a `core_network` block instead. Here the
-# path to Cloud WAN is: VPC -> TGW route table -> TGW/Cloud WAN peering -> segment.
+# Transit Gateway
+resource "aws_ec2_transit_gateway" "nvirginia_transit_gateway" {
+  provider = aws.awsnvirginia
+
+  amazon_side_asn                 = var.transit_gateway_asns.nvirginia
+  default_route_table_association = "disable"
+  default_route_table_propagation = "disable"
+  description                     = "Transit Gateway - ${var.aws_regions.nvirginia}"
+
+  tags = {
+    Name = "tgw-${var.aws_regions.nvirginia}-${var.identifier}"
+  }
+}
+
+# Transit Gateway route tables
+resource "aws_ec2_transit_gateway_route_table" "nvirginia_tgw_production_rt" {
+  provider = aws.awsnvirginia
+
+  transit_gateway_id = aws_ec2_transit_gateway.nvirginia_transit_gateway.id
+
+  tags = {
+    Name = "tgw-rt-production-${var.aws_regions.nvirginia}-${var.identifier}"
+  }
+}
+
+resource "aws_ec2_transit_gateway_route_table" "nvirginia_tgw_development_rt" {
+  provider = aws.awsnvirginia
+
+  transit_gateway_id = aws_ec2_transit_gateway.nvirginia_transit_gateway.id
+
+  tags = {
+    Name = "tgw-rt-development-${var.aws_regions.nvirginia}-${var.identifier}"
+  }
+}
+
+# Spoke VPCs (attached to Transit Gateway)
 module "nvirginia_spoke_vpcs" {
   for_each  = var.nvirginia_spoke_vpcs
   source    = "aws-ia/vpc/aws"
@@ -49,7 +77,7 @@ module "nvirginia_spoke_vpcs" {
   cidr_block = each.value.cidr_block
   az_count   = each.value.number_azs
 
-  transit_gateway_id = module.nvirginia_transit_gateway.transit_gateway_id
+  transit_gateway_id = aws_ec2_transit_gateway.nvirginia_transit_gateway.id
   transit_gateway_routes = {
     workload = "0.0.0.0/0"
   }
@@ -63,23 +91,85 @@ module "nvirginia_spoke_vpcs" {
   }
 }
 
-# Transit Gateway, its route tables, the Cloud WAN peering, and the
-# transit-gateway-route-table attachments (tagged `domain`).
-module "nvirginia_transit_gateway" {
-  source    = "../../tf_modules/transit_gateway"
-  providers = { aws = aws.awsnvirginia }
+# Associate each spoke VPC attachment with the route table it belongs to
+resource "aws_ec2_transit_gateway_route_table_association" "nvirginia_tgw_association" {
+  for_each = module.nvirginia_spoke_vpcs
+  provider = aws.awsnvirginia
 
-  identifier      = var.identifier
-  tgw_asn         = var.transit_gateway_asns.nvirginia
-  core_network_id = awscc_networkmanager_core_network.core_network.core_network_id
-  route_tables    = var.route_tables
+  transit_gateway_attachment_id  = each.value.transit_gateway_attachment_id
+  transit_gateway_route_table_id = var.nvirginia_spoke_vpcs[each.key].segment == "production" ? aws_ec2_transit_gateway_route_table.nvirginia_tgw_production_rt.id : aws_ec2_transit_gateway_route_table.nvirginia_tgw_development_rt.id
+}
 
-  vpc_information = {
-    for k, v in module.nvirginia_spoke_vpcs : k => {
-      transit_gateway_attachment_id = v.transit_gateway_attachment_id
-      route_table                   = var.nvirginia_spoke_vpcs[k].route_table
-    }
+# Propagate each spoke VPC's routes into the same route table
+resource "aws_ec2_transit_gateway_route_table_propagation" "nvirginia_tgw_propagation" {
+  for_each = module.nvirginia_spoke_vpcs
+  provider = aws.awsnvirginia
+
+  transit_gateway_attachment_id  = each.value.transit_gateway_attachment_id
+  transit_gateway_route_table_id = var.nvirginia_spoke_vpcs[each.key].segment == "production" ? aws_ec2_transit_gateway_route_table.nvirginia_tgw_production_rt.id : aws_ec2_transit_gateway_route_table.nvirginia_tgw_development_rt.id
+}
+
+# Cloud WAN peering
+resource "aws_networkmanager_transit_gateway_peering" "nvirginia_tgw_cwan_peering" {
+  provider = aws.awsnvirginia
+
+  core_network_id     = awscc_networkmanager_core_network.core_network.core_network_id
+  transit_gateway_arn = aws_ec2_transit_gateway.nvirginia_transit_gateway.arn
+
+  tags = {
+    Name = "tgw-cwan-peering-${var.aws_regions.nvirginia}-${var.identifier}"
   }
+}
+
+# Transit gateway policy table
+resource "aws_ec2_transit_gateway_policy_table" "nvirginia_tgw_policy_table" {
+  provider = aws.awsnvirginia
+
+  transit_gateway_id = aws_ec2_transit_gateway.nvirginia_transit_gateway.id
+
+  tags = {
+    Name = "tgw-policy-table-${var.aws_regions.nvirginia}-${var.identifier}"
+  }
+}
+
+resource "aws_ec2_transit_gateway_policy_table_association" "nvirginia_tgw_policy_table_assoc" {
+  provider = aws.awsnvirginia
+
+  transit_gateway_attachment_id   = aws_networkmanager_transit_gateway_peering.nvirginia_tgw_cwan_peering.transit_gateway_peering_attachment_id
+  transit_gateway_policy_table_id = aws_ec2_transit_gateway_policy_table.nvirginia_tgw_policy_table.id
+}
+
+# Cloud WAN Transit Gateway route table attachment
+resource "aws_networkmanager_transit_gateway_route_table_attachment" "nvirginia_production_rt_attachment" {
+  provider = aws.awsnvirginia
+
+  peering_id                      = aws_networkmanager_transit_gateway_peering.nvirginia_tgw_cwan_peering.id
+  transit_gateway_route_table_arn = aws_ec2_transit_gateway_route_table.nvirginia_tgw_production_rt.arn
+
+  tags = {
+    Name   = "tgw-rt-attachment-production-${var.aws_regions.nvirginia}-${var.identifier}"
+    domain = "production"
+  }
+
+  depends_on = [
+    aws_ec2_transit_gateway_policy_table_association.nvirginia_tgw_policy_table_assoc
+  ]
+}
+
+resource "aws_networkmanager_transit_gateway_route_table_attachment" "nvirginia_development_rt_attachment" {
+  provider = aws.awsnvirginia
+
+  peering_id                      = aws_networkmanager_transit_gateway_peering.nvirginia_tgw_cwan_peering.id
+  transit_gateway_route_table_arn = aws_ec2_transit_gateway_route_table.nvirginia_tgw_development_rt.arn
+
+  tags = {
+    Name   = "tgw-rt-attachment-development-${var.aws_regions.nvirginia}-${var.identifier}"
+    domain = "development"
+  }
+
+  depends_on = [
+    aws_ec2_transit_gateway_policy_table_association.nvirginia_tgw_policy_table_assoc
+  ]
 }
 
 # EC2 instances (in the spoke VPCs) and an EC2 Instance Connect endpoint
@@ -95,6 +185,42 @@ module "nvirginia_compute" {
 }
 
 # ---------- RESOURCES IN IRELAND ----------
+# Transit Gateway
+resource "aws_ec2_transit_gateway" "ireland_transit_gateway" {
+  provider = aws.awsireland
+
+  amazon_side_asn                 = var.transit_gateway_asns.ireland
+  default_route_table_association = "disable"
+  default_route_table_propagation = "disable"
+  description                     = "Transit Gateway - ${var.aws_regions.ireland}"
+
+  tags = {
+    Name = "tgw-${var.aws_regions.ireland}-${var.identifier}"
+  }
+}
+
+# Transit Gateway route tables
+resource "aws_ec2_transit_gateway_route_table" "ireland_tgw_production_rt" {
+  provider = aws.awsireland
+
+  transit_gateway_id = aws_ec2_transit_gateway.ireland_transit_gateway.id
+
+  tags = {
+    Name = "tgw-rt-production-${var.aws_regions.ireland}-${var.identifier}"
+  }
+}
+
+resource "aws_ec2_transit_gateway_route_table" "ireland_tgw_development_rt" {
+  provider = aws.awsireland
+
+  transit_gateway_id = aws_ec2_transit_gateway.ireland_transit_gateway.id
+
+  tags = {
+    Name = "tgw-rt-development-${var.aws_regions.ireland}-${var.identifier}"
+  }
+}
+
+# Spoke VPCs (attached to Transit Gateway)
 module "ireland_spoke_vpcs" {
   for_each  = var.ireland_spoke_vpcs
   source    = "aws-ia/vpc/aws"
@@ -105,7 +231,7 @@ module "ireland_spoke_vpcs" {
   cidr_block = each.value.cidr_block
   az_count   = each.value.number_azs
 
-  transit_gateway_id = module.ireland_transit_gateway.transit_gateway_id
+  transit_gateway_id = aws_ec2_transit_gateway.ireland_transit_gateway.id
   transit_gateway_routes = {
     workload = "0.0.0.0/0"
   }
@@ -119,23 +245,88 @@ module "ireland_spoke_vpcs" {
   }
 }
 
-module "ireland_transit_gateway" {
-  source    = "../../tf_modules/transit_gateway"
-  providers = { aws = aws.awsireland }
+# Associate each spoke VPC attachment with the route table it belongs to
+resource "aws_ec2_transit_gateway_route_table_association" "ireland_tgw_association" {
+  for_each = module.ireland_spoke_vpcs
+  provider = aws.awsireland
 
-  identifier      = var.identifier
-  tgw_asn         = var.transit_gateway_asns.ireland
-  core_network_id = awscc_networkmanager_core_network.core_network.core_network_id
-  route_tables    = var.route_tables
+  transit_gateway_attachment_id  = each.value.transit_gateway_attachment_id
+  transit_gateway_route_table_id = var.ireland_spoke_vpcs[each.key].segment == "production" ? aws_ec2_transit_gateway_route_table.ireland_tgw_production_rt.id : aws_ec2_transit_gateway_route_table.ireland_tgw_development_rt.id
+}
 
-  vpc_information = {
-    for k, v in module.ireland_spoke_vpcs : k => {
-      transit_gateway_attachment_id = v.transit_gateway_attachment_id
-      route_table                   = var.ireland_spoke_vpcs[k].route_table
-    }
+# Propagate each spoke VPC's routes into the same route table
+resource "aws_ec2_transit_gateway_route_table_propagation" "ireland_tgw_propagation" {
+  for_each = module.ireland_spoke_vpcs
+  provider = aws.awsireland
+
+  transit_gateway_attachment_id  = each.value.transit_gateway_attachment_id
+  transit_gateway_route_table_id = var.ireland_spoke_vpcs[each.key].segment == "production" ? aws_ec2_transit_gateway_route_table.ireland_tgw_production_rt.id : aws_ec2_transit_gateway_route_table.ireland_tgw_development_rt.id
+}
+
+# Cloud WAN peering
+resource "aws_networkmanager_transit_gateway_peering" "ireland_tgw_cwan_peering" {
+  provider = aws.awsireland
+
+  core_network_id     = awscc_networkmanager_core_network.core_network.core_network_id
+  transit_gateway_arn = aws_ec2_transit_gateway.ireland_transit_gateway.arn
+
+  tags = {
+    Name = "tgw-cwan-peering-${var.aws_regions.ireland}-${var.identifier}"
   }
 }
 
+# Transit gateway policy table
+resource "aws_ec2_transit_gateway_policy_table" "ireland_tgw_policy_table" {
+  provider = aws.awsireland
+
+  transit_gateway_id = aws_ec2_transit_gateway.ireland_transit_gateway.id
+
+  tags = {
+    Name = "tgw-policy-table-${var.aws_regions.ireland}-${var.identifier}"
+  }
+}
+
+resource "aws_ec2_transit_gateway_policy_table_association" "ireland_tgw_policy_table_assoc" {
+  provider = aws.awsireland
+
+  transit_gateway_attachment_id   = aws_networkmanager_transit_gateway_peering.ireland_tgw_cwan_peering.transit_gateway_peering_attachment_id
+  transit_gateway_policy_table_id = aws_ec2_transit_gateway_policy_table.ireland_tgw_policy_table.id
+}
+
+# Cloud WAN Transit Gateway route table attachment
+resource "aws_networkmanager_transit_gateway_route_table_attachment" "ireland_production_rt_attachment" {
+  provider = aws.awsireland
+
+  peering_id                      = aws_networkmanager_transit_gateway_peering.ireland_tgw_cwan_peering.id
+  transit_gateway_route_table_arn = aws_ec2_transit_gateway_route_table.ireland_tgw_production_rt.arn
+
+  tags = {
+    Name   = "tgw-rt-attachment-production-${var.aws_regions.ireland}-${var.identifier}"
+    domain = "production"
+  }
+
+  depends_on = [
+    aws_ec2_transit_gateway_policy_table_association.ireland_tgw_policy_table_assoc
+  ]
+}
+
+resource "aws_networkmanager_transit_gateway_route_table_attachment" "ireland_development_rt_attachment" {
+  provider = aws.awsireland
+
+  peering_id                      = aws_networkmanager_transit_gateway_peering.ireland_tgw_cwan_peering.id
+  transit_gateway_route_table_arn = aws_ec2_transit_gateway_route_table.ireland_tgw_development_rt.arn
+
+  tags = {
+    Name   = "tgw-rt-attachment-development-${var.aws_regions.ireland}-${var.identifier}"
+    domain = "development"
+  }
+
+  depends_on = [
+    aws_ec2_transit_gateway_policy_table_association.ireland_tgw_policy_table_assoc
+  ]
+}
+
+# EC2 instances (in the spoke VPCs) and an EC2 Instance Connect endpoint
 module "ireland_compute" {
   for_each  = module.ireland_spoke_vpcs
   source    = "../../tf_modules/compute"

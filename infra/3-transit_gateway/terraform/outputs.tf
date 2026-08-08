@@ -22,20 +22,43 @@ output "spoke_vpcs" {
 output "transit_gateways" {
   description = "Transit Gateways created, by Region."
   value = {
-    (var.aws_regions.nvirginia) = module.nvirginia_transit_gateway.transit_gateway_id
-    (var.aws_regions.ireland)   = module.ireland_transit_gateway.transit_gateway_id
+    (var.aws_regions.nvirginia) = aws_ec2_transit_gateway.nvirginia_transit_gateway.id
+    (var.aws_regions.ireland)   = aws_ec2_transit_gateway.ireland_transit_gateway.id
+  }
+}
+
+output "transit_gateway_route_tables" {
+  description = "Transit Gateway route tables created, by Region and segment."
+  value = {
+    (var.aws_regions.nvirginia) = {
+      production  = aws_ec2_transit_gateway_route_table.nvirginia_tgw_production_rt.id
+      development = aws_ec2_transit_gateway_route_table.nvirginia_tgw_development_rt.id
+    }
+    (var.aws_regions.ireland) = {
+      production  = aws_ec2_transit_gateway_route_table.ireland_tgw_production_rt.id
+      development = aws_ec2_transit_gateway_route_table.ireland_tgw_development_rt.id
+    }
+  }
+}
+
+output "cloud_wan_peerings" {
+  description = "Transit Gateway peerings with the core network, by Region."
+  value = {
+    (var.aws_regions.nvirginia) = aws_networkmanager_transit_gateway_peering.nvirginia_tgw_cwan_peering.id
+    (var.aws_regions.ireland)   = aws_networkmanager_transit_gateway_peering.ireland_tgw_cwan_peering.id
   }
 }
 
 output "cloud_wan_route_table_attachments" {
-  description = "Cloud WAN transit-gateway-route-table attachments, by Region and route table."
+  description = "Cloud WAN transit-gateway-route-table attachments, by Region and segment."
   value = {
-    (var.aws_regions.nvirginia) = module.nvirginia_transit_gateway.cloud_wan_route_table_attachment_ids
-    (var.aws_regions.ireland)   = module.ireland_transit_gateway.cloud_wan_route_table_attachment_ids
+    (var.aws_regions.nvirginia) = {
+      production  = aws_networkmanager_transit_gateway_route_table_attachment.nvirginia_production_rt_attachment.id
+      development = aws_networkmanager_transit_gateway_route_table_attachment.nvirginia_development_rt_attachment.id
+    }
+    (var.aws_regions.ireland) = {
+      production  = aws_networkmanager_transit_gateway_route_table_attachment.ireland_production_rt_attachment.id
+      development = aws_networkmanager_transit_gateway_route_table_attachment.ireland_development_rt_attachment.id
+    }
   }
-}
-
-output "policy_document" {
-  description = "Path to the Cloud WAN network policy document deployed."
-  value       = var.policy_document
 }
