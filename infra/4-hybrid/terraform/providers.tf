@@ -35,12 +35,4 @@ provider "aws" {
   alias  = "awsireland"
 }
 
-# Provider for Cloud WAN's HOME Region (us-west-2).
-#
-# Managed prefix lists associated with a core network MUST be created in the home
-# Region, regardless of where the edge locations are. This alias exists only for the
-# prefix lists that route summarization matches on.
-provider "aws" {
-  region = var.aws_regions.home
-  alias  = "awshome"
-}
+

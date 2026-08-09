@@ -1,7 +1,7 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 # SPDX-License-Identifier: MIT-0
 AWSTemplateFormatVersion: 2010-09-09
-Description: AWS Cloud WAN Blueprints - Hybrid (spoke VPCs & workloads)
+Description: AWS Cloud WAN Blueprints - Hybrid (spoke VPC & workloads)
 Transform: 'AWS::LanguageExtensions'
 
 Parameters:
@@ -14,7 +14,7 @@ Parameters:
     Default: "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64"
 
 Mappings:
-  ProdVpcCIDR:
+  SpokeVpcCIDR:
     us-east-1:
       CIDR: 10.10.0.0/24
       EndpointSubneta: 10.10.0.0/28
@@ -31,514 +31,178 @@ Mappings:
       PrivateSubnetb: 10.0.0.48/28
       CWANSubneta: 10.0.0.64/28
       CWANSubnetb: 10.0.0.80/28
-  DevVpcCIDR:
-    us-east-1:
-      CIDR: 10.10.1.0/24
-      EndpointSubneta: 10.10.1.0/28
-      EndpointSubnetb: 10.10.1.16/28
-      PrivateSubneta: 10.10.1.32/28
-      PrivateSubnetb: 10.10.1.48/28
-      CWANSubneta: 10.10.1.64/28
-      CWANSubnetb: 10.10.1.80/28
-    eu-west-1:
-      CIDR: 10.0.1.0/24
-      EndpointSubneta: 10.0.1.0/28
-      EndpointSubnetb: 10.0.1.16/28
-      PrivateSubneta: 10.0.1.32/28
-      PrivateSubnetb: 10.0.1.48/28
-      CWANSubneta: 10.0.1.64/28
-      CWANSubnetb: 10.0.1.80/28
-  Ipv6SubnetIndex:
-    Endpoint:
-      a: 0
-      b: 1
-    Private:
-      a: 2
-      b: 3
-    CWAN:
-      a: 4
-      b: 5
 
 Resources:
-  # ---------- PRODUCTION VPC ----------
-  ProductionVPC:
+  # ---------- SPOKE VPC ----------
+  SpokeVPC:
     Type: AWS::EC2::VPC
     Properties:
-      CidrBlock: !FindInMap [ProdVpcCIDR, !Ref 'AWS::Region', CIDR]
+      CidrBlock: !FindInMap [SpokeVpcCIDR, !Ref 'AWS::Region', CIDR]
       Tags:
         - Key: Name
           Value: !Join
             - '-'
-            - - prod-vpc
+            - - spoke-vpc
               - !Ref AWS::StackName
               - !Ref AWS::Region
 
-  ProductionIpv6CidrBlock:
-    Type: AWS::EC2::VPCCidrBlock
-    Properties:
-      AmazonProvidedIpv6CidrBlock: true
-      VpcId: !Ref ProductionVPC
-
   # For::Each iteration: per subnet type (Endpoint, Private, CWAN) and AZ (2 AZs)
-  # Resources to create: 6 subnets, 6 route tables, 6 route table associations - obtaining AZ affinity
-  'Fn::ForEach::ProductionSubnetTypes':
+  # Resources to create: 6 subnets, 6 route tables, 6 route table associations - obtaining AZ affinity
+  'Fn::ForEach::SpokeSubnetTypes':
     - SubnetType
     - [Endpoint, Private, CWAN]
     - '${SubnetType}':
       'Fn::ForEach::AZ':
         - AvailabilityZone
         - [a, b]
-          # Subnets
-        - 'Production${SubnetType}Subnet${AvailabilityZone}':
+          # Subnets
+        - 'Spoke${SubnetType}Subnet${AvailabilityZone}':
             Type: AWS::EC2::Subnet
-            DependsOn: ProductionIpv6CidrBlock
             Properties:
-              VpcId: !Ref ProductionVPC
+              VpcId: !Ref SpokeVPC
               AvailabilityZone: !Sub ${AWS::Region}${AvailabilityZone}
-              CidrBlock: !FindInMap [ProdVpcCIDR, !Ref 'AWS::Region', 'Fn::Sub': '${SubnetType}Subnet${AvailabilityZone}']
-              Ipv6CidrBlock: !Select
-                - !FindInMap [Ipv6SubnetIndex, !Ref SubnetType, !Ref AvailabilityZone]
-                - !Cidr
-                  - !Select [0, !GetAtt ProductionVPC.Ipv6CidrBlocks]
-                  - 6
-                  - 64
-              AssignIpv6AddressOnCreation: true
+              CidrBlock: !FindInMap [SpokeVpcCIDR, !Ref 'AWS::Region', 'Fn::Sub': '${SubnetType}Subnet${AvailabilityZone}']
               Tags:
                 - Key: Name
                   Value: !Join
                     - '-'
-                    - - !Sub prod-subnet-${SubnetType}-AZ${AvailabilityZone}
+                    - - !Sub spoke-subnet-${SubnetType}-AZ${AvailabilityZone}
                       - !Ref AWS::StackName
           # Route Tables
-          'Production${SubnetType}RouteTable${AvailabilityZone}':
+          'Spoke${SubnetType}RouteTable${AvailabilityZone}':
             Type: AWS::EC2::RouteTable
             Properties:
-              VpcId: !Ref ProductionVPC
+              VpcId: !Ref SpokeVPC
               Tags:
                 - Key: Name
                   Value: !Join
                     - '-'
-                    - - !Sub prod-rt-${SubnetType}-AZ${AvailabilityZone}
+                    - - !Sub spoke-rt-${SubnetType}-AZ${AvailabilityZone}
                       - !Ref AWS::StackName
           # Route Table associations
-          'Production${SubnetType}RouteTableAssociation${AvailabilityZone}':
+          'Spoke${SubnetType}RouteTableAssociation${AvailabilityZone}':
             Type: AWS::EC2::SubnetRouteTableAssociation
             Properties:
               RouteTableId: !Ref
-                'Fn::Sub': 'Production${SubnetType}RouteTable${AvailabilityZone}'
+                'Fn::Sub': 'Spoke${SubnetType}RouteTable${AvailabilityZone}'
               SubnetId: !Ref
-                'Fn::Sub': 'Production${SubnetType}Subnet${AvailabilityZone}'
+                'Fn::Sub': 'Spoke${SubnetType}Subnet${AvailabilityZone}'
 
-  # For::Each iteration: per Availability Zone
+  # For::Each iteration: per Availability Zone
   # VPC routes to 0.0.0.0/0 (via CWAN)
-  'Fn::ForEach::ProductionVPCRoutes':
+  'Fn::ForEach::SpokeVPCRoutes':
     - AvailabilityZone
     - [a, b]
-    - 'ProdDefaultToCWANRoute${AvailabilityZone}':
+    - 'SpokeDefaultToCWANRoute${AvailabilityZone}':
         DependsOn:
-          - ProdCWANAttachment
+          - SpokeCWANAttachment
         Type: AWS::EC2::Route
         Properties:
           RouteTableId: !Ref
-            'Fn::Sub': 'ProductionPrivateRouteTable${AvailabilityZone}'
+            'Fn::Sub': 'SpokePrivateRouteTable${AvailabilityZone}'
           DestinationCidrBlock: '0.0.0.0/0'
-          CoreNetworkArn: !Ref CoreNetworkArn
-      'ProdIpv6DefaultToCWANRoute${AvailabilityZone}':
-        DependsOn:
-          - ProdCWANAttachment
-        Type: AWS::EC2::Route
-        Properties:
-          RouteTableId: !Ref
-            'Fn::Sub': 'ProductionPrivateRouteTable${AvailabilityZone}'
-          DestinationIpv6CidrBlock: '::/0'
           CoreNetworkArn: !Ref CoreNetworkArn
 
   # AWS Cloud WAN attachment
-  ProdCWANAttachment:
+  SpokeCWANAttachment:
     Type: AWS::NetworkManager::VpcAttachment
     Properties:
       CoreNetworkId: !Ref CoreNetworkId
-      Options:
-        Ipv6Support: true
       SubnetArns:
-        - Fn::Join:
-            - ""
-            - - "arn:aws:ec2:"
-              - Ref: AWS::Region
-              - ":"
-              - Ref: AWS::AccountId
-              - ":subnet/"
-              - Ref: ProductionCWANSubneta
-        - Fn::Join:
-            - ""
-            - - "arn:aws:ec2:"
-              - Ref: AWS::Region
-              - ":"
-              - Ref: AWS::AccountId
-              - ":subnet/"
-              - Ref: ProductionCWANSubnetb
+        - !Sub 'arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:subnet/${SpokeCWANSubneta}'
+        - !Sub 'arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:subnet/${SpokeCWANSubnetb}'
+      VpcArn: !Sub 'arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:vpc/${SpokeVPC}'
       Tags:
         - Key: Name
           Value: !Join
             - '-'
-            - - prod-attachment
+            - - spoke-attachment
               - !Ref AWS::StackName
               - !Ref AWS::Region
-        - Key: domain
-          Value: production
-      VpcArn:
-        Fn::Join:
-          - ""
-          - - "arn:"
-            - Ref: AWS::Partition
-            - ":ec2:"
-            - Ref: AWS::Region
-            - ":"
-            - Ref: AWS::AccountId
-            - ":vpc/"
-            - Ref: ProductionVPC
 
   # Security Groups (Instances and EC2 Instance Connect endpoint)
-  VPCProdInstanceSecurityGroup:
+  VPCSpokeInstanceSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: Production VPC - Instance Security Group
-      VpcId: !Ref ProductionVPC
+      GroupDescription: Spoke VPC - Instance Security Group
+      VpcId: !Ref SpokeVPC
 
-  VPCProdInstanceSecurityGroupIngressICMP:
+  VPCSpokeInstanceSecurityGroupIngressICMP:
     Type: AWS::EC2::SecurityGroupIngress
     Properties:
-      GroupId: !Ref VPCProdInstanceSecurityGroup
+      GroupId: !Ref VPCSpokeInstanceSecurityGroup
       Description: Allowing ICMP traffic
       IpProtocol: icmp
       FromPort: -1
       ToPort: -1
       CidrIp: 10.0.0.0/8
 
-  VPCProdInstanceSecurityGroupIngressICMPv6:
+  VPCSpokeInstanceSecurityGroupIngressEIC:
     Type: AWS::EC2::SecurityGroupIngress
     Properties:
-      GroupId: !Ref VPCProdInstanceSecurityGroup
-      Description: Allowing ICMPv6 traffic
-      IpProtocol: icmpv6
-      CidrIpv6: ::/0
-
-  VPCProdInstanceSecurityGroupIngressEIC:
-    Type: AWS::EC2::SecurityGroupIngress
-    Properties:
-      GroupId: !Ref VPCProdInstanceSecurityGroup
+      GroupId: !Ref VPCSpokeInstanceSecurityGroup
       Description: Allowing EIC connection
       IpProtocol: tcp
       FromPort: 22
       ToPort: 22
-      SourceSecurityGroupId: !Ref VPCProdEndpointSecurityGroup
+      SourceSecurityGroupId: !Ref VPCSpokeEndpointSecurityGroup
 
-  VPCProdInstanceSecurityGroupEgress:
+  VPCSpokeInstanceSecurityGroupEgress:
     Type: AWS::EC2::SecurityGroupEgress
     Properties:
-      GroupId: !Ref VPCProdInstanceSecurityGroup
+      GroupId: !Ref VPCSpokeInstanceSecurityGroup
       Description: Allowing egress traffic
       IpProtocol: -1
       CidrIp: 0.0.0.0/0
 
-  VPCProdInstanceSecurityGroupEgressIPv6:
-    Type: AWS::EC2::SecurityGroupEgress
-    Properties:
-      GroupId: !Ref VPCProdInstanceSecurityGroup
-      Description: Allowing egress traffic IPv6
-      IpProtocol: -1
-      CidrIpv6: ::/0
-
-  VPCProdEndpointSecurityGroup:
+  VPCSpokeEndpointSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: Production VPC - Endpoints Security Group
-      VpcId: !Ref ProductionVPC
+      GroupDescription: Spoke VPC - Endpoints Security Group
+      VpcId: !Ref SpokeVPC
 
-  VPCProdEndpointSecurityGroupEgressEIC:
+  VPCSpokeEndpointSecurityGroupEgressEIC:
     Type: AWS::EC2::SecurityGroupEgress
     Properties:
-      GroupId: !Ref VPCProdEndpointSecurityGroup
+      GroupId: !Ref VPCSpokeEndpointSecurityGroup
       Description: Allowing EIC connection
       IpProtocol: tcp
       FromPort: 22
       ToPort: 22
-      DestinationSecurityGroupId: !Ref VPCProdInstanceSecurityGroup
+      DestinationSecurityGroupId: !Ref VPCSpokeInstanceSecurityGroup
 
-  # # For::Each iteration: per AZ (2 AZs)
-  # # EC2 Instances
-  'Fn::ForEach::ProductionInstances':
+  # For::Each iteration: per AZ (2 AZs)
+  # EC2 Instances
+  'Fn::ForEach::SpokeInstances':
     - AvailabilityZone
     - [a, b]
-    - 'ProdInstance${AvailabilityZone}':
+    - 'SpokeInstance${AvailabilityZone}':
         Type: AWS::EC2::Instance
         Properties:
           InstanceType: t2.micro
           SecurityGroupIds:
-            - !Ref VPCProdInstanceSecurityGroup
+            - !Ref VPCSpokeInstanceSecurityGroup
           SubnetId: !Ref
-            'Fn::Sub': 'ProductionPrivateSubnet${AvailabilityZone}'
+            'Fn::Sub': 'SpokePrivateSubnet${AvailabilityZone}'
           ImageId: !Ref LatestAmiId
           Tags:
             - Key: Name
               Value: !Join
                 - '-'
-                - - !Sub prod-instance-${AvailabilityZone}
+                - - !Sub spoke-instance-${AvailabilityZone}
                   - !Ref AWS::StackName
 
   # EC2 Instance Connect Endpoint
-  ProdEICEndpoint:
+  SpokeEICEndpoint:
     Type: AWS::EC2::InstanceConnectEndpoint
     Properties:
       PreserveClientIp: false
       SecurityGroupIds:
-        - !Ref VPCProdEndpointSecurityGroup
-      SubnetId: !Ref ProductionEndpointSubneta
-      Tags:
-        - Key: Name
-          Value : !Join
-            - '-'
-            - - !Sub prod-eic
-              - !Ref AWS::StackName
-
-  # ---------- DEVELOPMENT VPC ----------
-  DevelopmentVPC:
-    Type: AWS::EC2::VPC
-    Properties:
-      CidrBlock: !FindInMap [DevVpcCIDR, !Ref 'AWS::Region', CIDR]
+        - !Ref VPCSpokeEndpointSecurityGroup
+      SubnetId: !Ref SpokeEndpointSubneta
       Tags:
         - Key: Name
           Value: !Join
             - '-'
-            - - dev-vpc
-              - !Ref AWS::StackName
-              - !Ref AWS::Region
-
-  DevelopmentIpv6CidrBlock:
-    Type: AWS::EC2::VPCCidrBlock
-    Properties:
-      AmazonProvidedIpv6CidrBlock: true
-      VpcId: !Ref DevelopmentVPC
-
-  # For::Each iteration: per subnet type (Endpoint, Private, CWAN) and AZ (2 AZs)
-  # Resources to create: 6 subnets, 6 route tables, 6 route table associations - obtaining AZ affinity
-  'Fn::ForEach::DevelopmentSubnetTypes':
-    - SubnetType
-    - [Endpoint, Private, CWAN]
-    - '${SubnetType}':
-      'Fn::ForEach::AZ':
-        - AvailabilityZone
-        - [a, b]
-          # Subnets
-        - 'Development${SubnetType}Subnet${AvailabilityZone}':
-            Type: AWS::EC2::Subnet
-            DependsOn: DevelopmentIpv6CidrBlock
-            Properties:
-              VpcId: !Ref DevelopmentVPC
-              AvailabilityZone: !Sub ${AWS::Region}${AvailabilityZone}
-              CidrBlock: !FindInMap [DevVpcCIDR, !Ref 'AWS::Region', 'Fn::Sub': '${SubnetType}Subnet${AvailabilityZone}']
-              Ipv6CidrBlock: !Select
-                - !FindInMap [Ipv6SubnetIndex, !Ref SubnetType, !Ref AvailabilityZone]
-                - !Cidr
-                  - !Select [0, !GetAtt DevelopmentVPC.Ipv6CidrBlocks]
-                  - 6
-                  - 64
-              AssignIpv6AddressOnCreation: true
-              Tags:
-                - Key: Name
-                  Value: !Join
-                    - '-'
-                    - - !Sub dev-subnet-${SubnetType}-AZ${AvailabilityZone}
-                      - !Ref AWS::StackName
-          # Route Tables
-          'Development${SubnetType}RouteTable${AvailabilityZone}':
-            Type: AWS::EC2::RouteTable
-            Properties:
-              VpcId: !Ref DevelopmentVPC
-              Tags:
-                - Key: Name
-                  Value: !Join
-                    - '-'
-                    - - !Sub dev-rt-${SubnetType}-AZ${AvailabilityZone}
-                      - !Ref AWS::StackName
-          # Route Table associations
-          'Development${SubnetType}RouteTableAssociation${AvailabilityZone}':
-            Type: AWS::EC2::SubnetRouteTableAssociation
-            Properties:
-              RouteTableId: !Ref
-                'Fn::Sub': 'Development${SubnetType}RouteTable${AvailabilityZone}'
-              SubnetId: !Ref
-                'Fn::Sub': 'Development${SubnetType}Subnet${AvailabilityZone}'
-
-  # For::Each iteration: per Availability Zone
-  # VPC routes to 0.0.0.0/0 (via CWAN)
-  # VPC routes to ::/0 (via CWAN)
-  'Fn::ForEach::DevelopmentVPCRoutes':
-    - AvailabilityZone
-    - [a, b]
-    - 'DevDefaultToCWANRoute${AvailabilityZone}':
-        DependsOn:
-          - DevCWANAttachment
-        Type: AWS::EC2::Route
-        Properties:
-          RouteTableId: !Ref
-            'Fn::Sub': 'DevelopmentPrivateRouteTable${AvailabilityZone}'
-          DestinationCidrBlock: '0.0.0.0/0'
-          CoreNetworkArn: !Ref CoreNetworkArn
-      'DevIpv6DefaultToCWANRoute${AvailabilityZone}':
-        DependsOn:
-          - DevCWANAttachment
-        Type: AWS::EC2::Route
-        Properties:
-          RouteTableId: !Ref
-            'Fn::Sub': 'DevelopmentPrivateRouteTable${AvailabilityZone}'
-          DestinationIpv6CidrBlock: '::/0'
-          CoreNetworkArn: !Ref CoreNetworkArn
-
-  # AWS Cloud WAN attachment
-  DevCWANAttachment:
-    Type: AWS::NetworkManager::VpcAttachment
-    Properties:
-      CoreNetworkId: !Ref CoreNetworkId
-      Options:
-        Ipv6Support: true
-      SubnetArns:
-        - Fn::Join:
-            - ""
-            - - "arn:aws:ec2:"
-              - Ref: AWS::Region
-              - ":"
-              - Ref: AWS::AccountId
-              - ":subnet/"
-              - Ref: DevelopmentCWANSubneta
-        - Fn::Join:
-            - ""
-            - - "arn:aws:ec2:"
-              - Ref: AWS::Region
-              - ":"
-              - Ref: AWS::AccountId
-              - ":subnet/"
-              - Ref: DevelopmentCWANSubnetb
-      Tags:
-        - Key: Name
-          Value: !Join
-            - '-'
-            - - dev-attachment
-              - !Ref AWS::StackName
-              - !Ref AWS::Region
-        - Key: domain
-          Value: development
-      VpcArn:
-        Fn::Join:
-          - ""
-          - - "arn:"
-            - Ref: AWS::Partition
-            - ":ec2:"
-            - Ref: AWS::Region
-            - ":"
-            - Ref: AWS::AccountId
-            - ":vpc/"
-            - Ref: DevelopmentVPC
-
-  # Security Groups (Instances and EC2 Instance Connect endpoint)
-  VPCDevInstanceSecurityGroup:
-    Type: AWS::EC2::SecurityGroup
-    Properties:
-      GroupDescription: Development VPC - Instance Security Group
-      VpcId: !Ref DevelopmentVPC
-
-  VPCDevInstanceSecurityGroupIngressICMP:
-    Type: AWS::EC2::SecurityGroupIngress
-    Properties:
-      GroupId: !Ref VPCDevInstanceSecurityGroup
-      Description: Allowing ICMP traffic
-      IpProtocol: icmp
-      FromPort: -1
-      ToPort: -1
-      CidrIp: 10.0.0.0/8
-
-  VPCDevInstanceSecurityGroupIngressICMPv6:
-    Type: AWS::EC2::SecurityGroupIngress
-    Properties:
-      GroupId: !Ref VPCDevInstanceSecurityGroup
-      Description: Allowing ICMPv6 traffic
-      IpProtocol: icmpv6
-      CidrIpv6: ::/0
-
-  VPCDevInstanceSecurityGroupIngressEIC:
-    Type: AWS::EC2::SecurityGroupIngress
-    Properties:
-      GroupId: !Ref VPCDevInstanceSecurityGroup
-      Description: Allowing EIC connection
-      IpProtocol: tcp
-      FromPort: 22
-      ToPort: 22
-      SourceSecurityGroupId: !Ref VPCDevEndpointSecurityGroup
-
-  VPCDevInstanceSecurityGroupEgress:
-    Type: AWS::EC2::SecurityGroupEgress
-    Properties:
-      GroupId: !Ref VPCDevInstanceSecurityGroup
-      Description: Allowing egress traffic
-      IpProtocol: -1
-      CidrIp: 0.0.0.0/0
-
-  VPCDevInstanceSecurityGroupEgressIPv6:
-    Type: AWS::EC2::SecurityGroupEgress
-    Properties:
-      GroupId: !Ref VPCDevInstanceSecurityGroup
-      Description: Allowing egress traffic IPv6
-      IpProtocol: -1
-      CidrIpv6: ::/0
-
-  VPCDevEndpointSecurityGroup:
-    Type: AWS::EC2::SecurityGroup
-    Properties:
-      GroupDescription: Development VPC - Endpoints Security Group
-      VpcId: !Ref DevelopmentVPC
-
-  VPCDevEndpointSecurityGroupEgressEIC:
-    Type: AWS::EC2::SecurityGroupEgress
-    Properties:
-      GroupId: !Ref VPCDevEndpointSecurityGroup
-      Description: Allowing EIC connection
-      IpProtocol: tcp
-      FromPort: 22
-      ToPort: 22
-      DestinationSecurityGroupId: !Ref VPCDevInstanceSecurityGroup
-
-  # # For::Each iteration: per AZ (2 AZs)
-  # # EC2 Instances
-  'Fn::ForEach::DevelopmentInstances':
-    - AvailabilityZone
-    - [a, b]
-    - 'DevInstance${AvailabilityZone}':
-        Type: AWS::EC2::Instance
-        Properties:
-          InstanceType: t2.micro
-          SecurityGroupIds:
-            - !Ref VPCDevInstanceSecurityGroup
-          SubnetId: !Ref
-            'Fn::Sub': 'DevelopmentPrivateSubnet${AvailabilityZone}'
-          ImageId: !Ref LatestAmiId
-          Tags:
-            - Key: Name
-              Value: !Join
-                - '-'
-                - - !Sub dev-instance-${AvailabilityZone}
-                  - !Ref AWS::StackName
-
-  # EC2 Instance Connect Endpoint
-  DevEICEndpoint:
-    Type: AWS::EC2::InstanceConnectEndpoint
-    Properties:
-      PreserveClientIp: false
-      SecurityGroupIds:
-        - !Ref VPCDevEndpointSecurityGroup
-      SubnetId: !Ref DevelopmentEndpointSubneta
-      Tags:
-        - Key: Name
-          Value : !Join
-            - '-'
-            - - !Sub dev-eic
+            - - spoke-eic
               - !Ref AWS::StackName

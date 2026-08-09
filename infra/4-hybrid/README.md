@@ -1,139 +1,81 @@
-# Infra pattern 4 — Hybrid
+# Infrastructure-as-Code Patterns — AWS Cloud WAN with hybrid connectivity
 
-Adds **hybrid connectivity** to [`1-basic`](../1-basic/): AWS Site-to-Site VPN, Connect (SD-WAN), and Direct Connect gateway, each independently optional. This is the only pattern that unlocks the full BGP capability surface — route summarization, path preferences, and BGP communities.
+In this pattern, we want to show how AWS Cloud WAN integrates with AWS Site-to-Site VPN and AWS Direct Connect to achieve hybrid connectivity.
 
 <!-- DIAGRAM PLACEHOLDER -->
 > _Architecture diagram to be added._
 
 ## Implementations
 
-| IaC | Directory | Covers |
-|-----|-----------|--------|
-| Terraform | [`terraform/`](./terraform/) | Everything, including the hybrid attachments and the prefix lists |
-| CloudFormation | [`cloudformation/`](./cloudformation/) | Core network and spoke VPCs only |
+| IaC | Directory |
+|-----|-----------|
+| Terraform | [`terraform/`](./terraform/) |
+| CloudFormation | [`cloudformation/`](./cloudformation/) |
 
-The hybrid attachments and prefix lists are **Terraform-only**, because each sub-type is enabled selectively and that maps cleanly onto Terraform's optional object variables but awkwardly onto CloudFormation `Conditions`. The policy side is identical either way — attachment-type association is in the generated `core_network.yaml` — so a hybrid attachment created by hand against a CloudFormation deployment still lands in the `hybrid` segment automatically.
-
-New to the repository? Read [`../README.md`](../README.md) first — it covers prerequisites, cost, the tagging contract, and how to deploy a pattern with your own policy instead of its baseline.
+> New to the repository? Read [`../README.md`](../README.md) first.
 
 ## What gets deployed
 
 | Component | Configuration |
 |-----------|---------------|
-| AWS Regions | `us-east-1` and `eu-west-1` as edge locations, plus `us-west-2` for prefix lists only |
-| Core network | One, with **pinned** Core Network Edge ASNs (`64520`, `64521`) and `inside-cidr-blocks` for Connect |
-| Spoke VPCs | Two per Region — `prod`, `dev` |
-| Hybrid attachments | Site-to-Site VPN, Connect, Direct Connect gateway — each optional, **all off by default** |
-| Managed prefix lists | Two, created in `us-west-2` and associated with the core network under aliases |
-| Compute | An EC2 instance in every configured Availability Zone, plus an EC2 Instance Connect endpoint |
+| AWS Regions | `us-east-1`, `eu-west-1` |
+| AWS Cloud WAN resources | Global network & core network, with the Core Network Edge ASNs pinned to `64520` and `64521` |
+| Spoke VPCs | One per Region, each with three subnet tiers, one of them for the Cloud WAN attachment |
+| Site-to-Site VPN | Optional, in `us-east-1` — a customer gateway, a VPN connection, and its Cloud WAN attachment |
+| Direct Connect gateway | Optional — the direct connect gateway and its Cloud WAN attachment, which reaches both Core Network Edges |
+| Compute | An EC2 instance in every configured Availability Zone of each spoke VPC, plus an EC2 Instance Connect endpoint per VPC |
 
-**Attachment types created:** `vpc`, plus whichever of `site-to-site-vpn`, `connect`, and `direct-connect-gateway` you enable.
+**Attachment types created:** `vpc`, plus `site-to-site-vpn` and `direct-connect-gateway` when you enable them. Both hybrid attachments are off by default, because each needs a value only you can supply.
 
-## What each sub-type needs before it does anything
+**No attachment tags are applied.** Every other pattern here tags its attachments so the policy can associate on the tag value. This one does not: the baseline matches on **attachment type** and associates by a constant segment, so there is nothing for a tag to match. A Direct Connect gateway attachment is hybrid connectivity by definition and its owner has no segment choice to express, which is what makes attachment-type association the natural fit.
 
-Every policy capability treats the three sub-types identically. What differs is what each needs before routes appear.
+The customer gateway ASN and the Direct Connect gateway's Amazon-side ASN must not overlap the core network's `asn-ranges`, which the baseline sets to `64520-64525`.
 
-| Sub-type | Deploys with no external kit? | To actually exchange routes you need |
-|----------|-------------------------------|--------------------------------------|
-| Site-to-Site VPN | Yes | A BGP-speaking peer at the customer gateway address. Without one, the attachment exists and the tunnels stay **DOWN** |
-| Connect (SD-WAN) | The attachment, yes; the peer, no | An underlay VPC attachment (provided), `inside-cidr-blocks` in the policy (provided), and an appliance address for the peer |
-| Direct Connect gateway | The gateway and attachment, yes | A **real** Direct Connect connection and virtual interface. This cannot be simulated |
+> **This pattern builds the AWS side only.** The VPN tunnels stay down until a real on-premises peer answers, and the Direct Connect gateway carries no traffic until you associate a Transit VIF with it — creating the Transit VIFs and their association is out of scope here. What you can verify is the integration itself: that each hybrid attachment reaches the `hybrid` segment. Testing the path end to end is yours to do.
 
-The useful consequence: with no on-premises equipment at all you can still deploy the VPN and Direct Connect gateway attachments and watch them associate to the `hybrid` segment. That demonstrates attachment-type association and lets you bind routing-policy labels to them. You just will not see routes.
+## What the baseline policy configures
 
-## Attachment tags applied
+[`baseline.json`](./baseline.json) separates workloads from hybrid connectivity, then shares one with the other.
 
-| Attachment | Tag | Binds via |
-|------------|-----|-----------|
-| `prod` VPC | `domain = production` | Tag value |
-| `dev` VPC | `domain = development` | Tag value |
-| VPN, Connect, Direct Connect gateway | *(none)* | `attachment-type` |
+| | |
+|---|---|
+| Segments | `vpcs` and `hybrid`, both non-isolated |
+| Association | Rule 100 matches `site-to-site-vpn` **or** `direct-connect-gateway` and lands them in `hybrid`; rule 200 matches `vpc` and lands them in `vpcs`. Both associate by constant |
+| Sharing | `vpcs` is shared with `hybrid` |
+| Core network | `vpn-ecmp-support` and `dns-support` both enabled |
 
-Hybrid attachments are associated by **attachment type rather than by tag**. The baseline matches all three with one rule:
+Resulting reachability:
 
-```json
-{
-  "rule-number": 100,
-  "condition-logic": "or",
-  "conditions": [
-    { "type": "attachment-type", "operator": "equals", "value": "site-to-site-vpn" },
-    { "type": "attachment-type", "operator": "equals", "value": "connect" },
-    { "type": "attachment-type", "operator": "equals", "value": "direct-connect-gateway" }
-  ],
-  "action": { "association-method": "constant", "segment": "hybrid" }
-}
-```
+| Source | Destination | Result | Why |
+|--------|-------------|--------|-----|
+| spoke (us-east-1) | spoke (eu-west-1) | Allowed | Same `vpcs` segment, non-isolated, and segments are global |
+| spoke VPC | Either hybrid attachment | Allowed | `vpcs` is shared with `hybrid` |
+| VPN | Direct Connect gateway | Allowed | Both land in `hybrid`, which is not isolated |
 
-A Direct Connect gateway attachment is hybrid connectivity by definition, so its owner has no segment choice to express. A VPC could belong to any segment, so it declares its intent with a `domain` tag. [`policy/3-attachment_policies.md`](../../policy/3-attachment_policies.md) covers when each binding method is correct.
-
-## What the baseline policy demonstrates
-
-[`baseline.json`](./baseline.json) creates `production`, `development`, and `hybrid` segments, binds attachments as above, and shares `hybrid` with everything:
-
-```json
-{
-  "action": "share",
-  "mode": "attachment-route",
-  "segment": "hybrid",
-  "share-with": "*"
-}
-```
-
-`share-with: "*"` suits hybrid: on-premises usually needs to reach every workload segment, and enumerating them means editing the policy each time one is added. Be aware that `"*"` also picks up segments added in future, which is rarely what you want elsewhere. See [`policy/4-segment_sharing.md`](../../policy/4-segment_sharing.md).
-
-The core network also **pins** its Core Network Edge ASNs — `64520` for `us-east-1`, `64521` for `eu-west-1`. Pinning matters as soon as you write AS_PATH-based routing policies, because it makes the AS_PATH predictable and the policy readable. Hybrid ASNs must not overlap the core network's `asn-ranges`, and remember the range is right-open, so `64520-64525` provides 64520 to 64524.
-
-## Prefix lists for route summarization
-
-Summarization matches on **managed prefix lists by alias**, and those prefix lists must be created in Cloud WAN's home Region, `us-west-2`, regardless of where the edge locations are. That is the only reason this pattern has a third provider alias for a Region that hosts no Core Network Edge.
-
-| Alias | Contains |
-|-------|----------|
-| `nvirginiaipv4routes` | The `us-east-1` spoke VPC CIDRs |
-| `irelandipv4routes` | The `eu-west-1` spoke VPC CIDRs |
-
-One list per Region rather than a single aggregate, because a Direct Connect gateway attaches to **every** Core Network Edge. Advertise one supernet from every edge and on-premises routers see equal-cost paths into any Region, so traffic for an `eu-west-1` workload can enter through `us-east-1` and cross the backbone. Per-Region supernets keep entry local. See [`policy/6-routing_policies.md`](../../policy/6-routing_policies.md#route-summarization).
-
-Set `create_prefix_lists = false` to skip them. They are free, and a summarization policy has nothing to match without them, so the default is on.
-
-## What this pattern can and cannot exercise
-
-| Capability | Supported here |
-|------------|----------------|
-| Route filtering | Yes, inbound and outbound, on any hybrid attachment |
-| Route summarization | Yes, outbound only, using the prefix list aliases above |
-| Path preferences (AS_PATH, MED, local preference) | Yes — the reason the CNE ASNs are pinned |
-| BGP communities | VPN and Connect, yes. Direct Connect gateway and Transit Gateway peering, **no** — `tools/validate_policy.py` warns with `cwan-11` |
+Only the first row is testable here — the other two describe what the policy permits once a real hybrid path exists.
 
 ## Verifying it works
 
-With no on-premises equipment:
+1. In the AWS Network Manager console, confirm each spoke VPC attachment is `AVAILABLE` and associated with the `vpcs` segment, **with no tag applied**. That is attachment-type association working.
+2. For whichever hybrid attachments you enabled, confirm the same: `AVAILABLE` and associated with `hybrid`.
+3. Connect to an instance with EC2 Instance Connect — the endpoint sits in each VPC's endpoints subnet.
+4. `ping` the instance in the other Region. It should succeed: both spokes are in `vpcs`.
 
-1. In Network Manager, confirm the hybrid attachment appears and is associated with the `hybrid` segment **with no tag applied**. That is attachment-type association working.
-2. Confirm the prefix list associations exist on the core network under the expected aliases.
-3. Apply a routing-policy label to the hybrid attachment and confirm a routing policy binds to it.
+> **Deployed a policy of your own?** Steps 1 to 3 still apply — every attachment has to be `AVAILABLE` and associated where you expect. Step 4 does not: that describes the baseline, so derive your own expectations from the segments and `share` actions you wrote. Beyond reachability, what to check depends on the capabilities you used, and the [`policy/`](../../policy/) pages cover them.
 
-With a BGP peer:
-
-4. Confirm the VPN tunnels come up and that routes appear from on-premises.
-5. Apply a summarization policy and check the on-premises router receives the supernet rather than the individual VPC CIDRs.
-6. Verify with `get-network-routes`, **not** `list-core-network-routing-information` — the latter shows state *before* routing policies are applied, so it will happily show you the unsummarized routes and look like a failure.
+If an attachment is `AVAILABLE` but shows no segment, the policy's attachment policies do not match it. Because this pattern associates on attachment type rather than on a tag, check the `attachment-type` conditions rather than looking for a missing tag. See [`policy/3-attachment_policies.md`](../../policy/3-attachment_policies.md).
 
 ## Cost
 
 | Resource | Count | Charged |
 |----------|-------|---------|
 | Core Network Edge | 2, one per Region | Hourly |
-| VPC attachment | 4 | Hourly, per attachment |
-| Site-to-Site VPN attachment | 0 or 1 | Hourly, plus data transferred |
-| Connect attachment | 0 or 1 | Hourly |
-| Direct Connect gateway attachment | 0 or 1 | Hourly |
-| Managed prefix list | 2 | **Free** |
+| VPC attachment | 2, one per Region | Hourly, per attachment |
+| Site-to-Site VPN connection | 0 or 1 | Hourly, plus data transferred |
+| Site-to-Site VPN attachment | 0 or 1 | Hourly, per attachment |
+| Direct Connect gateway | 0 or 1 | **Free** |
+| Direct Connect gateway attachment | 0 or 1 | Hourly, per attachment |
 | EC2 instance | One per configured Availability Zone of every VPC | Hourly |
-| EC2 Instance Connect endpoint | 4, one per VPC | Hourly |
-
-With no hybrid sub-type enabled — the default — this costs the same as [`1-basic`](../1-basic/) with four VPCs instead of six. Each sub-type you enable adds attachment hours from the moment it is created, whether or not a peer is ever configured, so a VPN attachment with dead tunnels still bills.
-
-A Direct Connect **circuit** dwarfs everything above and is outside this pattern: you bring your own.
+| EC2 Instance Connect endpoint | 2, one per VPC | Hourly |
 
 Use a non-production account and run the cleanup steps in the IaC README when you are finished.

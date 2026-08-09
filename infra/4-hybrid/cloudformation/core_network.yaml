@@ -2,15 +2,10 @@
 # SPDX-License-Identifier: MIT-0
 #
 # ============================================================================
-# GENERATED FILE - DO NOT EDIT BY HAND.
+# The PolicyDocument below MUST match ../baseline.json, which is the policy this pattern shares with its Terraform implementation.
+# Change one and you must change the other - CI compares them and fails the build if they diverge.
 #
-# The PolicyDocument below is generated from baseline.json in this pattern's
-# directory, which is the single source of truth for the Cloud WAN network
-# policy. Edit baseline.json, then regenerate:
-#
-#     python3 tools/sync_cfn_policy.py <pattern-dir>
-#
-# CI fails if this file drifts from baseline.json.
+# To deploy a policy of your own, copy this template rather than editing it
 # ============================================================================
 AWSTemplateFormatVersion: 2010-09-09
 Description: AWS Cloud WAN Blueprints - Hybrid (global & core network)
@@ -18,7 +13,7 @@ Description: AWS Cloud WAN Blueprints - Hybrid (global & core network)
 Parameters:
   Identifier:
     Type: String
-    Default: 4-hybrid
+    Default: hybrid
     Description: Project identifier, used as a suffix when naming resources.
 
 Resources:
@@ -45,18 +40,13 @@ Resources:
           dns-support: true
           asn-ranges:
             - 64520-64525
-          inside-cidr-blocks:
-            - 10.255.0.0/16
           edge-locations:
             - location: us-east-1
               asn: 64520
             - location: eu-west-1
               asn: 64521
         segments:
-          - name: production
-            require-attachment-acceptance: false
-            isolate-attachments: false
-          - name: development
+          - name: vpcs
             require-attachment-acceptance: false
             isolate-attachments: false
           - name: hybrid
@@ -71,9 +61,6 @@ Resources:
                 value: site-to-site-vpn
               - type: attachment-type
                 operator: equals
-                value: connect
-              - type: attachment-type
-                operator: equals
                 value: direct-connect-gateway
             action:
               association-method: constant
@@ -84,16 +71,15 @@ Resources:
               - type: attachment-type
                 operator: equals
                 value: vpc
-              - type: tag-exists
-                key: domain
             action:
-              association-method: tag
-              tag-value-of-key: domain
+              association-method: constant
+              segment: vpcs
         segment-actions:
           - action: share
             mode: attachment-route
-            segment: hybrid
-            share-with: "*"
+            segment: vpcs
+            share-with:
+              - hybrid
 
 Outputs:
   CoreNetworkId:

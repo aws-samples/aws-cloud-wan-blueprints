@@ -3,14 +3,12 @@
 #
 # Deploy/teardown helpers for infra pattern 4 (Hybrid).
 #
-# NOTE: core_network.yaml is GENERATED from ../baseline.json and must not be edited by
-# hand. To deploy a policy of your own, copy it and pass CORE_TEMPLATE - see the
-# variable below and README.md.
+# NOTE: the policy in core_network.yaml must match ../baseline.json; CI compares them.
+# To deploy a policy of your own, copy the template and pass CORE_TEMPLATE
 
-.PHONY: deploy deploy-cloudwan deploy-workloads undeploy undeploy-workloads undeploy-cloudwan
+.PHONY: deploy deploy-cloudwan deploy-workloads deploy-hybrid undeploy undeploy-hybrid undeploy-workloads undeploy-cloudwan
 
 IDENTIFIER      ?= hybrid
-HOME_REGION     ?= us-east-1
 NVIRGINIA       ?= us-east-1
 IRELAND         ?= eu-west-1
 CORE_STACK      ?= core-network-$(IDENTIFIER)
@@ -21,19 +19,34 @@ CORE_STACK      ?= core-network-$(IDENTIFIER)
 CORE_TEMPLATE   ?= core_network.yaml
 NVIRGINIA_STACK ?= $(IDENTIFIER)-nvirginia
 IRELAND_STACK   ?= $(IDENTIFIER)-ireland
+HYBRID_STACK    ?= $(IDENTIFIER)-hybrid
+
+# Hybrid attachments, both off by default. CUSTOMER_GATEWAY_IP describes your
+# on-premises VPN device; DXGW_ASN is the Amazon-side ASN of the Direct Connect gateway.
+CUSTOMER_GATEWAY_IP  ?= 1.2.3.4
+CUSTOMER_GATEWAY_ASN ?= 65010
+DXGW_ASN             ?= 65000
 
 deploy: deploy-cloudwan deploy-workloads
 
 deploy-cloudwan:
-	aws cloudformation deploy --stack-name $(CORE_STACK) --template-file $(CORE_TEMPLATE) --parameter-overrides Identifier="$(IDENTIFIER)" --no-fail-on-empty-changeset --region $(HOME_REGION)
+	aws cloudformation deploy --stack-name $(CORE_STACK) --template-file $(CORE_TEMPLATE) --parameter-overrides Identifier="$(IDENTIFIER)" --no-fail-on-empty-changeset --region $(NVIRGINIA)
 
-deploy-workloads: CORENETWORK_ID = $(shell aws cloudformation describe-stacks --stack-name "$(CORE_STACK)" --query 'Stacks[0].Outputs[?OutputKey == `CoreNetworkId`].OutputValue' --output text --region $(HOME_REGION))
-deploy-workloads: CORENETWORK_ARN = $(shell aws cloudformation describe-stacks --stack-name "$(CORE_STACK)" --query 'Stacks[0].Outputs[?OutputKey == `CoreNetworkArn`].OutputValue' --output text --region $(HOME_REGION))
+deploy-workloads: CORENETWORK_ID = $(shell aws cloudformation describe-stacks --stack-name "$(CORE_STACK)" --query 'Stacks[0].Outputs[?OutputKey == `CoreNetworkId`].OutputValue' --output text --region $(NVIRGINIA))
+deploy-workloads: CORENETWORK_ARN = $(shell aws cloudformation describe-stacks --stack-name "$(CORE_STACK)" --query 'Stacks[0].Outputs[?OutputKey == `CoreNetworkArn`].OutputValue' --output text --region $(NVIRGINIA))
 deploy-workloads:
 	aws cloudformation deploy --stack-name $(NVIRGINIA_STACK) --template-file workloads.yaml --parameter-overrides CoreNetworkId="$(CORENETWORK_ID)" CoreNetworkArn="$(CORENETWORK_ARN)" --capabilities CAPABILITY_IAM --no-fail-on-empty-changeset --region $(NVIRGINIA)
 	aws cloudformation deploy --stack-name $(IRELAND_STACK) --template-file workloads.yaml --parameter-overrides CoreNetworkId="$(CORENETWORK_ID)" CoreNetworkArn="$(CORENETWORK_ARN)" --capabilities CAPABILITY_IAM --no-fail-on-empty-changeset --region $(IRELAND)
 
-undeploy: undeploy-workloads undeploy-cloudwan
+deploy-hybrid: CORENETWORK_ID = $(shell aws cloudformation describe-stacks --stack-name "$(CORE_STACK)" --query 'Stacks[0].Outputs[?OutputKey == `CoreNetworkId`].OutputValue' --output text --region $(NVIRGINIA))
+deploy-hybrid:
+	aws cloudformation deploy --stack-name $(HYBRID_STACK) --template-file hybrid.yaml --parameter-overrides Identifier="$(IDENTIFIER)" CoreNetworkId="$(CORENETWORK_ID)" CustomerGatewayIp="$(CUSTOMER_GATEWAY_IP)" CustomerGatewayAsn="$(CUSTOMER_GATEWAY_ASN)" DirectConnectGatewayAsn="$(DXGW_ASN)" EdgeLocations="$(NVIRGINIA),$(IRELAND)" --no-fail-on-empty-changeset --region $(NVIRGINIA)
+
+undeploy: undeploy-hybrid undeploy-workloads undeploy-cloudwan
+
+undeploy-hybrid:
+	aws cloudformation delete-stack --stack-name $(HYBRID_STACK) --region $(NVIRGINIA)
+	aws cloudformation wait stack-delete-complete --stack-name $(HYBRID_STACK) --region $(NVIRGINIA)
 
 undeploy-workloads:
 	aws cloudformation delete-stack --stack-name $(NVIRGINIA_STACK) --region $(NVIRGINIA)
@@ -42,5 +55,5 @@ undeploy-workloads:
 	aws cloudformation wait stack-delete-complete --stack-name $(IRELAND_STACK) --region $(IRELAND)
 
 undeploy-cloudwan:
-	aws cloudformation delete-stack --stack-name $(CORE_STACK) --region $(HOME_REGION)
-	aws cloudformation wait stack-delete-complete --stack-name $(CORE_STACK) --region $(HOME_REGION)
+	aws cloudformation delete-stack --stack-name $(CORE_STACK) --region $(NVIRGINIA)
+	aws cloudformation wait stack-delete-complete --stack-name $(CORE_STACK) --region $(NVIRGINIA)
