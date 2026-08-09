@@ -3,18 +3,14 @@
 #
 # Deploy/teardown helpers for infra pattern 5 (Multi-account).
 #
-# Everything here runs in the NETWORKING account. The spoke account creates its own VPC
-# and Cloud WAN attachment using the CoreNetworkId / CoreNetworkArn outputs - any other
-# pattern's workload template works, pointed at the shared core network.
-#
-# NOTE: core_network.yaml is GENERATED from ../baseline.json and must not be edited by
-# hand. To deploy a policy of your own, copy it and pass CORE_TEMPLATE - see the
-# variable below and README.md.
+# NOTE: the policy in core_network.yaml must match ../baseline.json; CI compares them.
+# To deploy a policy of your own, copy the template and pass CORE_TEMPLATE
 
 .PHONY: deploy deploy-cloudwan deploy-share outputs undeploy undeploy-share undeploy-cloudwan
 
 IDENTIFIER      ?= multi-account
-HOME_REGION     ?= us-east-1
+OREGON          ?= us-west-2
+NVIRGINIA       ?= us-east-1
 CORE_STACK      ?= core-network-$(IDENTIFIER)
 
 # Override to deploy a core network with your own policy without editing the
@@ -22,34 +18,36 @@ CORE_STACK      ?= core-network-$(IDENTIFIER)
 # then `make deploy-cloudwan CORE_TEMPLATE=my_core_network.yaml`.
 CORE_TEMPLATE   ?= core_network.yaml
 SHARE_STACK     ?= core-network-share-$(IDENTIFIER)
-ALLOW_EXTERNAL  ?= false
+
+# Who to share the core network with. PRINCIPAL_TYPE is account, organizational_unit or
+# organization; PRINCIPAL is a 12-digit account ID or an AWS Organizations ARN.
+PRINCIPAL_TYPE  ?= account
 
 deploy: deploy-cloudwan deploy-share
 
 deploy-cloudwan:
-	aws cloudformation deploy --stack-name $(CORE_STACK) --template-file $(CORE_TEMPLATE) --parameter-overrides Identifier="$(IDENTIFIER)" --no-fail-on-empty-changeset --region $(HOME_REGION)
+	aws cloudformation deploy --stack-name $(CORE_STACK) --template-file $(CORE_TEMPLATE) --parameter-overrides Identifier="$(IDENTIFIER)" --no-fail-on-empty-changeset --region $(OREGON)
 
-deploy-share: CORENETWORK_ARN = $(shell aws cloudformation describe-stacks --stack-name "$(CORE_STACK)" --query 'Stacks[0].Outputs[?OutputKey == `CoreNetworkArn`].OutputValue' --output text --region $(HOME_REGION))
+deploy-share: CORENETWORK_ARN = $(shell aws cloudformation describe-stacks --stack-name "$(CORE_STACK)" --query 'Stacks[0].Outputs[?OutputKey == `CoreNetworkArn`].OutputValue' --output text --region $(OREGON))
 deploy-share:
-ifndef SPOKE_PRINCIPALS
-	$(error SPOKE_PRINCIPALS is required. Usage: make deploy SPOKE_PRINCIPALS="111122223333[,222233334444]")
+ifndef PRINCIPAL
+	$(error PRINCIPAL is required. Usage: make deploy PRINCIPAL=111122223333 [PRINCIPAL_TYPE=account|organizational_unit|organization])
 endif
-	aws cloudformation deploy --stack-name $(SHARE_STACK) --template-file ram_share.yaml --parameter-overrides Identifier="$(IDENTIFIER)" CoreNetworkArn="$(CORENETWORK_ARN)" SpokePrincipals="$(SPOKE_PRINCIPALS)" AllowExternalPrincipals="$(ALLOW_EXTERNAL)" --no-fail-on-empty-changeset --region $(HOME_REGION)
+	aws cloudformation deploy --stack-name $(SHARE_STACK) --template-file ram_share.yaml --parameter-overrides Identifier="$(IDENTIFIER)" CoreNetworkArn="$(CORENETWORK_ARN)" PrincipalType="$(PRINCIPAL_TYPE)" Principal="$(PRINCIPAL)" --no-fail-on-empty-changeset --region $(NVIRGINIA)
 
 # Prints what the spoke accounts need to create their attachments.
 outputs:
-	@aws cloudformation describe-stacks --stack-name $(CORE_STACK) --query 'Stacks[0].Outputs[?OutputKey==`CoreNetworkId`].OutputValue' --output text --region $(HOME_REGION) | sed 's/^/CORENETWORK_ID=/'
-	@aws cloudformation describe-stacks --stack-name $(CORE_STACK) --query 'Stacks[0].Outputs[?OutputKey==`CoreNetworkArn`].OutputValue' --output text --region $(HOME_REGION) | sed 's/^/CORENETWORK_ARN=/'
-	@aws cloudformation describe-stacks --stack-name $(SHARE_STACK) --query 'Stacks[0].Outputs[?OutputKey==`ResourceShareArn`].OutputValue' --output text --region $(HOME_REGION) | sed 's/^/RESOURCE_SHARE_ARN=/'
+	@aws cloudformation describe-stacks --stack-name $(CORE_STACK) --query 'Stacks[0].Outputs[?OutputKey==`CoreNetworkId`].OutputValue' --output text --region $(OREGON) | sed 's/^/CORENETWORK_ID=/'
+	@aws cloudformation describe-stacks --stack-name $(CORE_STACK) --query 'Stacks[0].Outputs[?OutputKey==`CoreNetworkArn`].OutputValue' --output text --region $(OREGON) | sed 's/^/CORENETWORK_ARN=/'
+	@aws cloudformation describe-stacks --stack-name $(SHARE_STACK) --query 'Stacks[0].Outputs[?OutputKey==`ResourceShareArn`].OutputValue' --output text --region $(NVIRGINIA) | sed 's/^/RESOURCE_SHARE_ARN=/'
 
-# Run only AFTER every spoke account has deleted its attachments. A core network with
-# attachments from another account cannot be deleted.
+# Run only AFTER every spoke account has deleted its attachments. A core network with attachments from a spoke account cannot be deleted.
 undeploy: undeploy-share undeploy-cloudwan
 
 undeploy-share:
-	aws cloudformation delete-stack --stack-name $(SHARE_STACK) --region $(HOME_REGION)
-	aws cloudformation wait stack-delete-complete --stack-name $(SHARE_STACK) --region $(HOME_REGION)
+	aws cloudformation delete-stack --stack-name $(SHARE_STACK) --region $(NVIRGINIA)
+	aws cloudformation wait stack-delete-complete --stack-name $(SHARE_STACK) --region $(NVIRGINIA)
 
 undeploy-cloudwan:
-	aws cloudformation delete-stack --stack-name $(CORE_STACK) --region $(HOME_REGION)
-	aws cloudformation wait stack-delete-complete --stack-name $(CORE_STACK) --region $(HOME_REGION)
+	aws cloudformation delete-stack --stack-name $(CORE_STACK) --region $(OREGON)
+	aws cloudformation wait stack-delete-complete --stack-name $(CORE_STACK) --region $(OREGON)

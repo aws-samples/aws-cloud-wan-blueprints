@@ -6,7 +6,7 @@
 # ---------- AWS CLOUD WAN ----------
 # Global Network
 resource "awscc_networkmanager_global_network" "global_network" {
-  provider = awscc.awsccnvirginia
+  provider = awscc.awsccoregon
 
   description = "Global Network - ${var.identifier}"
 
@@ -17,11 +17,8 @@ resource "awscc_networkmanager_global_network" "global_network" {
 }
 
 # Core Network
-#
-# The policy document is read from a file so that the SAME document is consumed by both
-# this Terraform and the CloudFormation implementation. See V2.md section 6.
 resource "awscc_networkmanager_core_network" "core_network" {
-  provider = awscc.awsccnvirginia
+  provider = awscc.awsccoregon
 
   global_network_id = awscc_networkmanager_global_network.global_network.id
   description       = "Core Network - ${var.identifier}"
@@ -34,23 +31,24 @@ resource "awscc_networkmanager_core_network" "core_network" {
 }
 
 # ---------- AWS RAM SHARE ----------
-# Shares the CORE NETWORK with other accounts, so they can create attachments into its
-# segments from their own VPCs.
-#
-# This is the whole pattern. Deliberately no workloads: the other patterns answer "which
-# attachment types exist", this one answers "who owns them". Pair it with any other
-# pattern's workload code deployed in the spoke account.
+# Shares the CORE NETWORK with a spoke account, organizational unit, or organization
+locals {
+  # Sharing with an account ID needs external principals allowed, which also covers an account that is in your organization.
+  allow_external_principals = var.share_with.type == "account"
+}
+
 resource "aws_ram_resource_share" "core_network_share" {
   provider = aws.awsnvirginia
 
   name                      = "core-network-share-${var.identifier}"
-  allow_external_principals = var.allow_external_principals
+  allow_external_principals = local.allow_external_principals
 
   tags = {
     Name = "core-network-share-${var.identifier}"
   }
 }
 
+# Resource association: Cloud WAN's core network
 resource "aws_ram_resource_association" "core_network" {
   provider = aws.awsnvirginia
 
@@ -58,13 +56,10 @@ resource "aws_ram_resource_association" "core_network" {
   resource_share_arn = aws_ram_resource_share.core_network_share.arn
 }
 
-# One association per principal. Prefer specific account IDs or organizational unit ARNs
-# over an entire organization ARN: a principal that can see the core network can create
-# attachments into it, and the segment those land in is decided by a tag THEY set.
-resource "aws_ram_principal_association" "principals" {
-  for_each = toset(var.share_with_principals)
+# Principal association: account, organizational unit, or organization
+resource "aws_ram_principal_association" "principal" {
   provider = aws.awsnvirginia
 
-  principal          = each.value
+  principal          = var.share_with.value
   resource_share_arn = aws_ram_resource_share.core_network_share.arn
 }

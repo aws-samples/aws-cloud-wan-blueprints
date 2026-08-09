@@ -17,15 +17,14 @@ terraform {
   }
 }
 
-# This pattern runs entirely in the NETWORKING account. It creates no workloads, so it
-# needs only one Region's providers - the API endpoint used to manage the core network
-# and to create the AWS RAM share. Edge locations come from the policy document.
+# N. Virginia provider (aws)
 provider "aws" {
   region = var.aws_regions.nvirginia
   alias  = "awsnvirginia"
 }
 
+# Oregon provider (awscc)
 provider "awscc" {
-  region = var.aws_regions.nvirginia
-  alias  = "awsccnvirginia"
+  region = var.aws_regions.oregon
+  alias  = "awsccoregon"
 }

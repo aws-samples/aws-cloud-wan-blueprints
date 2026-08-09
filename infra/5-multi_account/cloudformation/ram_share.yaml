@@ -3,50 +3,55 @@
 AWSTemplateFormatVersion: 2010-09-09
 Description: AWS Cloud WAN Blueprints - Multi Account (AWS RAM share for the core network)
 
-# Shares the CORE NETWORK with other accounts so they can create attachments into its
-# segments from their own VPCs. This is the whole pattern - deliberately no workloads.
-#
-# Sharing a core network grants the ability to create attachments into it, and the segment
-# an attachment lands in is decided by a tag the SPOKE account sets. Prefer specific
-# account IDs or an organizational unit ARN over an entire organization ARN, and see the
-# pattern README for defensive attachment-policy design.
+# Shares the CORE NETWORK with a spoke account so it can create attachments into the core network's segments - deliberately no workloads
 
 Parameters:
-  CoreNetworkArn:
-    Type: String
-    Description: ARN of the core network to share (the CoreNetworkArn output of core_network.yaml).
-
-  SpokePrincipals:
-    Type: CommaDelimitedList
-    Description: >
-      Principals to share the core network with: AWS account IDs, or an Organization /
-      organizational unit ARN.
-
-  AllowExternalPrincipals:
-    Type: String
-    Default: "false"
-    AllowedValues:
-      - "true"
-      - "false"
-    Description: >
-      Allow sharing with principals outside your AWS Organization. Leave false when both
-      accounts are in the same Organization with RAM sharing enabled, in which case the
-      share is auto-accepted.
-
   Identifier:
     Type: String
     Default: multi-account
     Description: Project identifier, used as a suffix when naming resources.
+
+  CoreNetworkArn:
+    Type: String
+    Description: ARN of the core network to share (the CoreNetworkArn output of core_network.yaml).
+
+  PrincipalType:
+    Type: String
+    AllowedValues:
+      - account
+      - organizational_unit
+      - organization
+    Description: >
+      What kind of principal to share with. account takes a 12-digit account ID and works
+      whether or not that account is in your organization. organizational_unit and
+      organization take an AWS Organizations ARN and need RAM sharing with AWS Organizations
+      enabled once, from the management account.
+
+  Principal:
+    Type: String
+    AllowedPattern: '^([0-9]{12}|arn:[^:]+:organizations::[0-9]{12}:(organization/o-[a-z0-9]+|ou/o-[a-z0-9]+/ou-[0-9a-z]+-[0-9a-z]+))$'
+    Description: >
+      A 12-digit AWS account ID, an organizational unit ARN, or an organization ARN -
+      matching PrincipalType.
+    ConstraintDescription: >
+      Must be a 12-digit account ID, an OU ARN such as
+      arn:aws:organizations::111122223333:ou/o-abc123def4/ou-ab12-cdef3456, or an organization
+      ARN such as arn:aws:organizations::111122223333:organization/o-abc123def4.
+
+Conditions:
+  # Sharing with an account ID needs external principals allowed, which also covers an account that is in your organization.
+  ShareWithAccount: !Equals [!Ref PrincipalType, account]
 
 Resources:
   CoreNetworkShare:
     Type: AWS::RAM::ResourceShare
     Properties:
       Name: !Sub 'core-network-share-${Identifier}'
-      AllowExternalPrincipals: !Ref AllowExternalPrincipals
+      AllowExternalPrincipals: !If [ShareWithAccount, 'true', 'false']
       ResourceArns:
         - !Ref CoreNetworkArn
-      Principals: !Ref SpokePrincipals
+      Principals:
+        - !Ref Principal
       Tags:
         - Key: Name
           Value: !Sub 'core-network-share-${Identifier}'

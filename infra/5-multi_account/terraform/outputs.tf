@@ -16,13 +16,3 @@ output "resource_share_arn" {
   description = "AWS RAM resource share ARN. A spoke account outside your Organization needs this to accept the invitation."
   value       = aws_ram_resource_share.core_network_share.arn
 }
-
-output "shared_with" {
-  description = "Principals the core network is shared with."
-  value       = var.share_with_principals
-}
-
-output "policy_document" {
-  description = "Path to the Cloud WAN network policy document deployed."
-  value       = var.policy_document
-}

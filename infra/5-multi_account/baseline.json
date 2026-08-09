@@ -7,10 +7,12 @@
     ],
     "edge-locations": [
       {
-        "location": "us-east-1"
+        "location": "us-east-1",
+        "asn": 64520
       },
       {
-        "location": "eu-west-1"
+        "location": "eu-west-1",
+        "asn": 64521
       }
     ]
   },
@@ -29,27 +31,6 @@
   "attachment-policies": [
     {
       "rule-number": 100,
-      "condition-logic": "and",
-      "conditions": [
-        {
-          "type": "attachment-type",
-          "operator": "equals",
-          "value": "vpc"
-        },
-        {
-          "type": "tag-value",
-          "operator": "equals",
-          "key": "domain",
-          "value": "development"
-        }
-      ],
-      "action": {
-        "association-method": "constant",
-        "segment": "development"
-      }
-    },
-    {
-      "rule-number": 200,
       "condition-logic": "and",
       "conditions": [
         {
