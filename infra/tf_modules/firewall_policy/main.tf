@@ -23,7 +23,11 @@ resource "aws_networkfirewall_firewall_policy" "anfw_policy" {
     stateful_default_actions = ["aws:drop_strict", "aws:alert_strict"]
     stateful_rule_group_reference {
       priority     = 10
-      resource_arn = contains(["north-south"], var.traffic_flow) ? aws_networkfirewall_rule_group.allow_domains[0].arn : aws_networkfirewall_rule_group.allow_icmp[0].arn
+      resource_arn = aws_networkfirewall_rule_group.allow_icmp.arn
+    }
+    stateful_rule_group_reference {
+      priority     = 20
+      resource_arn = aws_networkfirewall_rule_group.allow_domains.arn
     }
   }
 }
@@ -83,9 +87,7 @@ resource "aws_networkfirewall_rule_group" "drop_remote" {
 
 # Stateful Rule Group - Allowing access to .amazon.com (HTTPS)
 resource "aws_networkfirewall_rule_group" "allow_domains" {
-  count = contains(["north-south"], var.traffic_flow) ? 1 : 0
-
-  capacity = 100
+  capacity = 5
   name     = "allow-domains-${var.identifier}"
   type     = "STATEFUL"
   rule_group {
@@ -103,9 +105,7 @@ resource "aws_networkfirewall_rule_group" "allow_domains" {
 
 # Stateful Rule Group - Allowing ICMP traffic
 resource "aws_networkfirewall_rule_group" "allow_icmp" {
-  count = contains(["east-west"], var.traffic_flow) ? 1 : 0
-
-  capacity = 100
+  capacity = 5
   name     = "allow-icmp-${var.identifier}"
   type     = "STATEFUL"
   rule_group {
