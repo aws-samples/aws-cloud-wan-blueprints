@@ -1,6 +1,6 @@
 # Segments and network function groups
 
-A segment is a **routing domain that spans your whole network**: one route table that exists in every Region where you declared a Core Network Edge (CNE). Declare `production` once and it is present at every CNE, with cross-Region reachability inside it handled by the CNE mesh — no peerings, no static routes, nothing to keep in step.
+A [**segment**](https://docs.aws.amazon.com/network-manager/latest/cloudwan/cloudwan-policies-json.html#cloudwan-segments-json-about) is a **routing domain that spans your whole network**: one route table that exists in every Region where you declared a Core Network Edge (CNE). Declare `production` once and it is present at every CNE, with cross-Region reachability inside it handled by the CNE mesh — no peerings, no static routes, nothing to keep in step.
 
 Four properties shape everything else you write:
 
@@ -9,7 +9,7 @@ Four properties shape everything else you write:
 * **An attachment belongs to exactly one segment**, or to one network function group.
 * **Segments do not solve overlapping CIDRs.** This is IP routing, so addresses have to be unique.
 
-The other place an attachment can land is a **network function group**: a specialised segment for inspection VPCs. The difference that matters is routing — you do not manage it. AWS Cloud WAN does, from the [`service insertion`](./5-service_insertion.md) rules you write.
+The other place an attachment can land is a [**network function group**](https://docs.aws.amazon.com/network-manager/latest/cloudwan/cloudwan-policies-json.html#cloudwan-network-functions-json): a specialised segment for inspection VPCs. The difference that matters is routing — you do not manage it. AWS Cloud WAN does, from the [`service insertion`](./5-service_insertion.md) rules you write.
 
 ## `segments`
 
