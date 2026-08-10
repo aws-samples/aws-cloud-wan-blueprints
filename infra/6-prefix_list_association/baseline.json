@@ -1,0 +1,47 @@
+{
+  "version": "2025.11",
+  "core-network-configuration": {
+    "vpn-ecmp-support": false,
+    "asn-ranges": [
+      "64520-64525"
+    ],
+    "edge-locations": [
+      {
+        "location": "us-east-1",
+        "asn": 64520
+      },
+      {
+        "location": "eu-west-1",
+        "asn": 64521
+      }
+    ]
+  },
+  "segments": [
+    {
+      "name": "vpcs",
+      "require-attachment-acceptance": false,
+      "isolate-attachments": false
+    }
+  ],
+  "attachment-policies": [
+    {
+      "rule-number": 100,
+      "condition-logic": "and",
+      "conditions": [
+        {
+          "type": "attachment-type",
+          "operator": "equals",
+          "value": "vpc"
+        },
+        {
+          "type": "tag-exists",
+          "key": "domain"
+        }
+      ],
+      "action": {
+        "association-method": "tag",
+        "tag-value-of-key": "domain"
+      }
+    }
+  ]
+}
