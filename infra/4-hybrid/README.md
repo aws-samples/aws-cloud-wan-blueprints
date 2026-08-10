@@ -2,6 +2,8 @@
 
 In this pattern, we want to show how AWS Cloud WAN integrates with AWS Site-to-Site VPN and AWS Direct Connect to achieve hybrid connectivity.
 
+> **Connect (SD-WAN) attachments are not covered yet.** This pattern ships Site-to-Site VPN and Direct Connect gateway attachments. Support for Connect attachments is on the way.
+
 <!-- DIAGRAM PLACEHOLDER -->
 > _Architecture diagram to be added._
 
