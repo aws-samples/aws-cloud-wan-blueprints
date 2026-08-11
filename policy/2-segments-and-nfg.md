@@ -88,10 +88,10 @@ An [`attachment-policies`](./3-attachment_policies.md) rule matching on `region`
 Whether attachments in the segment reach each other. Defaults to `false`:
 
 ```json
-{ 
-  "name": "shared", 
-  "require-attachment-acceptance": false, 
-  "isolate-attachments": true 
+{
+  "name": "shared",
+  "require-attachment-acceptance": false,
+  "isolate-attachments": true
 }
 ```
 
@@ -143,10 +143,10 @@ The array is optional, and each entry takes three fields:
 ```json
 {
   "network-function-groups": [
-    { 
-      "name": "inspectionVpcs", 
-      "description": "Inspection VPCs", 
-      "require-attachment-acceptance": false 
+    {
+      "name": "inspectionVpcs",
+      "description": "Inspection VPCs",
+      "require-attachment-acceptance": false
     }
   ]
 }

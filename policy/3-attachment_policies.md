@@ -21,9 +21,9 @@ The `attachment-policies` array is optional, and each rule in it takes five fiel
 Rules are evaluated in ascending `rule-number` and **the first match wins** — no rule after it is processed. So specific rules go before general ones: a catch-all placed early makes everything after it unreachable. Leave numbering room too. Stepping by 100 lets you slot a rule in at 150 later, instead of renumbering its neighbours and changing what they match.
 
 ```json
-{ 
-  "rule-number": 100, 
-  "description": "Spoke VPC association based on their `domain` tag" 
+{
+  "rule-number": 100,
+  "description": "Spoke VPC association based on their `domain` tag"
 }
 ```
 
@@ -51,20 +51,20 @@ Only the tag conditions reach a network function group, and those rules are cons
   "rule-number": 100,
   "condition-logic": "and",
   "conditions": [
-    { 
-      "type": "attachment-type", 
-      "operator": "equals", 
-      "value": "vpc" 
+    {
+      "type": "attachment-type",
+      "operator": "equals",
+      "value": "vpc"
     },
-    { 
-      "type": "region", 
-      "operator": "begins-with", 
-      "value": "eu-" 
+    {
+      "type": "region",
+      "operator": "begins-with",
+      "value": "eu-"
     }
   ],
-  "action": { 
-    "association-method": "constant", 
-    "segment": "europe" 
+  "action": {
+    "association-method": "constant",
+    "segment": "europe"
   }
 }
 ```
@@ -88,18 +88,18 @@ What happens when the rule matches. An attachment gets exactly one destination: 
 1. **`constant`** puts everything the rule matches into one named segment. Use it where the destination is a property of the rule rather than of the attachment.
 
 ```json
-{ 
-  "association-method": "constant", 
-  "segment": "hybrid" 
+{
+  "association-method": "constant",
+  "segment": "hybrid"
 }
 ```
 
 2. **`tag`** lets the attachment name its own segment. `tag-value-of-key` gives the tag key to read, and that tag's **value must match a declared segment name exactly**.
 
 ```json
-{ 
-  "association-method": "tag", 
-  "tag-value-of-key": "domain" 
+{
+  "association-method": "tag",
+  "tag-value-of-key": "domain"
 }
 ```
 
@@ -108,18 +108,18 @@ The leverage is in that pairing. Agree a tagging convention — one key whose va
 3. **`add-to-network-function-group`** sends the attachment to a group instead, under the narrower conditions described at the top of this page.
 
 ```json
-{ 
-  "add-to-network-function-group": "inspectionVpcs" 
+{
+  "add-to-network-function-group": "inspectionVpcs"
 }
 ```
 
 4. **`require-acceptance`** adds manual approval to a single rule.
 
 ```json
-{ 
-  "association-method": "tag", 
-  "tag-value-of-key": "domain", 
-  "require-acceptance": true 
+{
+  "association-method": "tag",
+  "tag-value-of-key": "domain",
+  "require-acceptance": true
 }
 ```
 
@@ -144,19 +144,19 @@ This applies to any rule that depends on tags, and we recommend three ways to ke
   "rule-number": 300,
   "condition-logic": "and",
   "conditions": [
-    { 
-      "type": "attachment-type", 
-      "operator": "equals", 
-      "value": "vpc" 
+    {
+      "type": "attachment-type",
+      "operator": "equals",
+      "value": "vpc"
     },
-    { 
-      "type": "tag-exists", 
-      "key": "domain" 
+    {
+      "type": "tag-exists",
+      "key": "domain"
     }
   ],
-  "action": { 
-    "association-method": "tag", 
-    "tag-value-of-key": "domain" 
+  "action": {
+    "association-method": "tag",
+    "tag-value-of-key": "domain"
   }
 }
 ```
@@ -170,25 +170,25 @@ Any VPC attachment tagged `domain` joins the segment its value names — `domain
   "rule-number": 200,
   "condition-logic": "or",
   "conditions": [
-    { 
-      "type": "attachment-type", 
-      "operator": "equals", 
-      "value": "site-to-site-vpn" 
+    {
+      "type": "attachment-type",
+      "operator": "equals",
+      "value": "site-to-site-vpn"
     },
-    { 
-      "type": "attachment-type", 
-      "operator": "equals", 
+    {
+      "type": "attachment-type",
+      "operator": "equals",
       "value": "direct-connect-gateway"
     },
-    { 
-      "type": "attachment-type", 
-      "operator": "equals", 
-      "value": "connect" 
+    {
+      "type": "attachment-type",
+      "operator": "equals",
+      "value": "connect"
     }
   ],
-  "action": { 
-    "association-method": "constant", 
-    "segment": "hybrid" 
+  "action": {
+    "association-method": "constant",
+    "segment": "hybrid"
   }
 }
 ```
@@ -202,10 +202,10 @@ Every hybrid attachment type goes to `hybrid`, with no tag involved — `or` is 
   "rule-number": 150,
   "condition-logic": "or",
   "conditions": [
-    { 
-      "type": "account", 
-      "operator": "equals", 
-      "value": "111122223333" 
+    {
+      "type": "account",
+      "operator": "equals",
+      "value": "111122223333"
     }
   ],
   "action": {
@@ -227,15 +227,15 @@ This is the pattern for third parties needing layer 3 reachability — a SaaS pr
   "rule-number": 100,
   "condition-logic": "and",
   "conditions": [
-    { 
-      "type": "tag-value", 
-      "operator": "equals", 
-      "key": "inspection", 
-      "value": "true" 
+    {
+      "type": "tag-value",
+      "operator": "equals",
+      "key": "inspection",
+      "value": "true"
     }
   ],
-  "action": { 
-    "add-to-network-function-group": "inspectionVpcs" 
+  "action": {
+    "add-to-network-function-group": "inspectionVpcs"
   }
 }
 ```
@@ -249,19 +249,19 @@ An inspection VPC is still a `vpc`, so any broader rule matching that type would
   "rule-number": 250,
   "condition-logic": "and",
   "conditions": [
-    { 
-      "type": "attachment-type", 
-      "operator": "equals", 
-      "value": "vpc" 
+    {
+      "type": "attachment-type",
+      "operator": "equals",
+      "value": "vpc"
     },
-    { 
-      "type": "tag-exists", 
-      "key": "domain" 
+    {
+      "type": "tag-exists",
+      "key": "domain"
     },
-    { 
-      "type": "region", 
-      "operator": "equals", 
-      "value": "us-east-2" 
+    {
+      "type": "region",
+      "operator": "equals",
+      "value": "us-east-2"
     }
   ],
   "action": {
