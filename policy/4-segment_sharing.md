@@ -1,62 +1,15 @@
-# Segment Sharing
+# Segment sharing
 
-Produces **`segment-actions`** entries with `action: share` — exchanging routes between
-segments **without** inspection.
+Segments are closed to one another by default. A [`share`](https://docs.aws.amazon.com/network-manager/latest/cloudwan/cloudwan-policies-json.html) action opens a path from one segment to one or more others, and it is the simplest way to do it: routes are exchanged so attachments on each side can reach each other, with nothing in the traffic path.
 
-Segments do not talk to each other by default. Sharing is how you open a path, and it is
-the simplest of the three `segment-actions`. Its one surprising property is that it is
-**not transitive**, which is worth understanding before you draw a topology.
+Two properties define how a share behaves, and both differ from what a traditional routed network would give you.
 
-```json
-{
-  "segment-actions": [
-    {
-      "action": "share",
-      "mode": "attachment-route",
-      "segment": "shared",
-      "share-with": ["production", "development"]
-    }
-  ]
-}
-```
+* **A share is bidirectional.** AWS Cloud WAN creates mutual advertisements between the segment and the segments it is shared with, so routes travel both ways from one declaration. There is no one-way export.
+* **A share is not transitive.** If `A` shares with `B` and `B` shares with `C`, then `A` and `C` still cannot reach each other. Only routes to a segment's own attachments cross — neither [a static route](./6-static_routes.md) nor [a route learned from another share](https://docs.aws.amazon.com/network-manager/latest/cloudwan/cloudwan-policy-network-actions-routes.html) travels on.
 
-That says: *routes in `shared` are visible to `production` and `development`, and their
-routes are visible to `shared`.* Sharing exchanges routes in both directions between the
-named segments — it is a mutual relationship, not a one-way export.
+> **A share is bidirectional, but a routing policy configured on it is not.** Every routing policy is declared `inbound` or `outbound`, so it applies to one direction of the exchange only. Covering both directions means naming a policy for each.
 
-## `mode: attachment-route`
-
-The only mode in practical use. Routes learned from the segment's attachments are
-exchanged with the segments named in `share-with`.
-
-## `share-with: "*"`
-
-You can share with every other segment:
-
-```json
-{
-  "segment-actions": [
-    {
-      "action": "share",
-      "mode": "attachment-route",
-      "segment": "hybrid",
-      "share-with": "*"
-    }
-  ]
-}
-```
-
-This is genuinely useful for a `hybrid` segment — on-premises usually needs to reach
-everything, and enumerating every workload segment means editing the policy each time a
-new one appears.
-
-Be deliberate about it elsewhere. `"*"` means *future* segments are included too, so a
-segment added next year for a sensitive workload is reachable from this one on day one
-without anybody deciding that. For anything other than the hybrid case, enumerate.
-
-## Non-transitivity, and why it is a feature
-
-**If `A` shares with `B`, and `B` shares with `C`, then `A` and `C` are not connected.**
+The `segment-actions` array is optional. Every field a `share` entry accepts appears below:
 
 ```json
 {
@@ -65,138 +18,103 @@ without anybody deciding that. For anything other than the hybrid case, enumerat
       "action": "share",
       "mode": "attachment-route",
       "segment": "shared",
-      "share-with": ["production"]
-    },
-    {
-      "action": "share",
-      "mode": "attachment-route",
-      "segment": "shared",
-      "share-with": ["development"]
+      "share-with": ["production", "development"],
+      "routing-policy-names": ["filterRoutesIntoShared"]
     }
   ]
 }
 ```
 
-`production` reaches `shared`. `development` reaches `shared`. `production` and
-`development` **cannot reach each other** — and there is no accidental path through the
-shared segment.
+| Item | What it sets | Required | Default |
+|------|--------------|----------|---------|
+| `action` | Which segment action this entry is — `share` for sharing | Yes | `share` |
+| `mode` | Which routes cross the share — `attachment-route` is the only value | Yes | — |
+| `segment` | The segment the share is declared on | Yes | — |
+| `share-with` | The segments that gain reachability with `segment` | Yes | — |
+| `routing-policy-names` | Routing policies to apply to this share | No | — |
 
-In a traditional routed network, connecting a hub to two spokes usually gives you
-spoke-to-spoke reachability as a side effect, and you then filter it back out. Cloud WAN
-inverts the default: nothing is reachable until declared, and no relationship you did not
-write can appear.
+## `segment` and `share-with`
 
-The practical method: **draw the graph, then write one `share` action per edge.** If you
-find yourself assuming a path exists because two segments both connect to a third, you
-have found a bug in the design rather than a Cloud WAN limitation.
+These name the two sides. `segment` is the segment the share is declared on, and `share-with` is what gains reachability with it. Sharing happens between `segment` and each counterpart, never between the counterparts themselves — one action gives `production` and `development` access to `shared` while leaving them unable to reach each other, which is a property of the model rather than something you configured.
 
-## The shared-services pattern
+`share-with` takes three forms:
 
-The most common real use, and what [`infra/1-basic`](../infra/1-basic/) deploys:
+| Form | Shares with | Reach for it when |
+|------|-------------|-------------------|
+| **Array** | Exactly the segments listed | The counterparts are known, and a new segment must not join without a decision |
+| **`"*"`** | Every other segment in the core network | Every segment needs this reachability, including ones added later |
+| **`except`** | Every other segment bar those listed | The exclusions are fewer than the segments needing reachability |
+
+**Array**
 
 ```json
 {
-  "segments": [
-    { "name": "production", "require-attachment-acceptance": false },
-    { "name": "development", "require-attachment-acceptance": false },
-    { "name": "shared", "require-attachment-acceptance": false, "isolate-attachments": true }
-  ],
-  "segment-actions": [
-    {
-      "action": "share",
-      "mode": "attachment-route",
-      "segment": "shared",
-      "share-with": ["production", "development"]
-    }
-  ]
+  "segment": "shared",
+  "share-with": ["production", "development"]
 }
 ```
 
-Three properties combine here, and each comes from a different place:
-
-| Property | Comes from |
-|----------|------------|
-| Workloads reach shared services | The `share` action |
-| Workload segments cannot reach each other | Non-transitivity — nothing to configure |
-| Shared services cannot reach each other | `isolate-attachments: true` on `shared` |
-
-The resulting reachability:
-
-| Source | Destination | Result |
-|--------|-------------|--------|
-| `production` | `shared` | ✅ Allowed |
-| `development` | `shared` | ✅ Allowed |
-| `production` | `production` (other Region) | ✅ Allowed — same segment, not isolated |
-| `production` | `development` | ❌ Blocked — no share declared |
-| `shared` | `shared` (other attachment) | ❌ Blocked — segment is isolated |
-
-That last row is worth dwelling on: a shared-services VPC hosting a directory service
-and another hosting a logging pipeline can both be reached by workloads, while remaining
-unable to reach each other. Achieving that with route tables is fiddly; here it is one
-boolean.
-
-## Filtering while sharing
-
-A `share` action can carry routing policies, so only some routes cross the boundary:
+**`"*"`**
 
 ```json
 {
-  "segment-actions": [
-    {
-      "action": "share",
-      "mode": "attachment-route",
-      "segment": "hybrid",
-      "share-with": ["development"],
-      "routing-policy-names": ["filterDevelopmentRoutes"]
-    }
-  ]
+  "segment": "hybrid",
+  "share-with": "*"
 }
 ```
 
-This is how you build a single hybrid segment that presents a *different* view of
-on-premises to each workload segment — development sees only development prefixes, test
-sees only test prefixes, from one BGP session. The routing policy that does the filtering
-is defined in [`6-routing_policies.md`](./6-routing_policies.md).
+**`except`**
 
-Two constraints:
+```json
+{
+  "segment": "hybrid",
+  "share-with": {
+    "except": ["sandbox"]
+  }
+}
+```
 
-- **Routing policies on a share are unidirectional.** The policy applies in one
-  direction; if you need filtering both ways, declare both.
-- **Share policies are applied after attachment policies.** Attachments associate first,
-  then sharing determines reachability.
+> **`"*"` and `except` both include segments that do not exist yet.** A segment added next year for a sensitive workload is reachable on day one, without anybody deciding that. Enumerate unless you want that behaviour, and where you use `except`, make the exclusion list part of whatever review adds a segment.
 
-## Sharing versus service insertion
+For any given pair of segments, which one goes in which field makes no difference to reachability, since the advertisement is mutual — until a routing policy is involved, when direction is read relative to `segment` (see below for more information).
 
-Both connect segments. The difference is whether traffic is inspected:
+## `routing-policy-names`
 
-| | `share` | `send-via` |
-|---|---|---|
-| Traffic path | Direct between attachments | Through a network function group |
-| Use when | The segments are mutually trusted | Traffic must be inspected or logged |
-| Cost | No additional data path | Inspection VPC + appliance per Region |
-| Latency | Direct | Extra hop, or two in dual-hop mode |
+An array of [routing policies](./7-routing_policies.md) to apply to this share, each one named as declared in the `routing-policies` section. Two capabilities come with them. Routes can be **filtered**, so a share opens a path and still carries only part of what each side knows. And their **BGP attributes can be modified** — local preference, MED, AS_PATH, communities — so a share can shape which of several paths wins, not just whether a prefix is known at all.
 
-If a boundary needs a firewall, use [`5-service_insertion.md`](./5-service_insertion.md)
-instead. Do not use `share` and expect to filter with a routing policy — route filtering
-controls *which prefixes are known*, not *what the traffic is allowed to do*. Dropping a
-route is not a security control; a host with a static route can still send packets.
+Routing policies arrived with policy [`version`](./1-core_network_version_configuration.md) `2025.11`, so this field needs a document declaring that version or later.
 
-## Constraints to carry forward
+> **Summarization is not one of them.** It only works outbound and on BGP-capable attachments, because collapsing prefixes into an aggregate happens in an advertisement to a BGP peer — and a share, propagating routes inside the core network, has no peer on the far end.
 
-| Constraint | Consequence |
-|------------|-------------|
-| Sharing is **non-transitive** | Declare every relationship explicitly |
-| Sharing is mutual between the named segments | Not a one-way export |
-| `share-with: "*"` includes segments added later | Enumerate unless you want that |
-| Routing policies on a share are **unidirectional** | Declare both directions if needed |
-| Share actions apply **after** attachment policies | Association first, reachability second |
-| Route filtering is not access control | Use service insertion for enforcement |
+```json
+{
+  "action": "share",
+  "mode": "attachment-route",
+  "segment": "production",
+  "share-with": ["hybrid"],
+  "routing-policy-names": ["allowOnPremisesCore"]
+}
+```
 
-## Next
+Which routes a policy acts on is not stated on the share. It follows from the policy's own `routing-policy-direction`, and that direction is always read **from the point of view of the segment named in `segment`**. Two steps resolve it every time:
 
-[`5-service_insertion.md`](./5-service_insertion.md) — connecting segments *through* an
-inspection appliance.
+1. **Find the reference point.** It is the segment in the `segment` field, never one in `share-with`.
+2. **Read the direction from there.** `inbound` acts on routes arriving *at* that segment from the `share-with` side. `outbound` acts on routes leaving it *towards* them.
 
-## Reference
+**Policies on a share are unidirectional**, so one policy governs one of those two flows and leaves the other untouched. All four combinations:
 
-- [Core network policy parameters](https://docs.aws.amazon.com/network-manager/latest/cloudwan/cloudwan-policies-json.html)
+| `segment` | `share-with` | Direction | Acts on routes travelling |
+|-----------|--------------|-----------|---------------------------|
+| `production` | `["hybrid"]` | `inbound` | `hybrid` → `production` |
+| `production` | `["hybrid"]` | `outbound` | `production` → `hybrid` |
+| `hybrid` | `["production"]` | `inbound` | `production` → `hybrid` |
+| `hybrid` | `["production"]` | `outbound` | `hybrid` → `production` |
+
+Rows one and four act on the same flow, as do rows two and three: swapping the two segments leaves reachability untouched but inverts what every attached policy does. Both spellings deploy cleanly, so pick a convention — one segment always in `segment` — and read directions against it.
+
+> **Filtering routes is not access control.** A policy on a share changes which prefixes each side learns, not what traffic is permitted, and a host with a static route can still send packets at a prefix it was never told about. Where a boundary needs enforcing, put the traffic through [service insertion](./5-service_insertion.md) instead.
+
+Two ordering facts complete the picture:
+
+1. Share policies are applied after attachment policies, so an attachment associates first and only then does sharing decide what it reaches.
+2. Segments carry their own [`deny-filter` and `allow-filter`](./2-segments-and-nfg.md#deny-filter-and-allow-filter) guardrails, evaluated after every share — those bound which segments may exchange routes at all, where routing policies work a level down, on the prefixes.
