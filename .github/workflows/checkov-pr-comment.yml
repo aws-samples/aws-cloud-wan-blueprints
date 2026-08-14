@@ -1,0 +1,422 @@
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: MIT-0
+#
+# Publishes advisory Checkov findings from the unprivileged CI workflow.
+#
+# SECURITY BOUNDARY:
+# - This workflow has pull-request write permission because workflow_run executes
+#   in the trusted default-branch context.
+# - It MUST NOT check out or execute pull-request code.
+# - It trusts a report only when the source CI workflow is byte-identical to the
+#   version at the pull request's base commit.
+# - The downloaded artifact is untrusted data. Parse only the fixed JSON file,
+#   validate its schema, bound its size/output, and escape rendered values.
+
+name: Checkov PR report
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+
+permissions:
+  actions: read
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: checkov-pr-report-${{ github.event.workflow_run.head_repository.id }}-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: false
+
+jobs:
+  report:
+    name: Publish advisory Checkov findings
+    if: ${{ github.event.workflow_run.event == 'pull_request' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve exact pull request and trusted artifact
+        id: resolve
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const run = context.payload.workflow_run;
+            const workflowPath = '.github/workflows/ci.yml';
+
+            async function getPullRequest(number) {
+              const response = await github.rest.pulls.get({
+                owner,
+                repo,
+                pull_number: number
+              });
+              return response.data;
+            }
+
+            async function getFileAtCommit(path, ref) {
+              const response = await github.rest.repos.getContent({ owner, repo, path, ref });
+              if (Array.isArray(response.data) || response.data.type !== 'file' || !response.data.content) {
+                throw new Error(`Expected ${path} to be a file at ${ref}.`);
+              }
+              return Buffer.from(response.data.content, 'base64');
+            }
+
+            let candidates = [];
+            if (Array.isArray(run.pull_requests) && run.pull_requests.length > 0) {
+              for (const reference of run.pull_requests) {
+                const referenceIsComplete = Boolean(
+                  reference.head?.sha &&
+                  reference.head?.repo?.id &&
+                  reference.base?.sha
+                );
+                if (!referenceIsComplete) {
+                  core.warning(`Pull-request metadata is incomplete for CI run ${run.id}.`);
+                  continue;
+                }
+
+                const pullRequest = await getPullRequest(reference.number);
+                const headShaMatches = pullRequest.head?.sha === reference.head.sha;
+                const headRepoMatches = pullRequest.head?.repo?.id === reference.head.repo.id;
+                if (
+                  pullRequest.state === 'open' &&
+                  pullRequest.base?.ref === 'main' &&
+                  headShaMatches &&
+                  headRepoMatches
+                ) {
+                  candidates.push({
+                    pullRequest,
+                    baseSha: reference.base.sha
+                  });
+                }
+              }
+            } else {
+              const associated = await github.paginate(
+                github.rest.repos.listPullRequestsAssociatedWithCommit,
+                { owner, repo, commit_sha: run.head_sha, per_page: 100 }
+              );
+              candidates = associated
+                .filter(pullRequest => {
+                  const sameRepository =
+                    Boolean(run.head_repository?.id) && pullRequest.head?.repo?.id === run.head_repository.id;
+                  const sameBranch = Boolean(run.head_branch) && pullRequest.head?.ref === run.head_branch;
+                  const sameCommit =
+                    pullRequest.head?.sha === run.head_sha || pullRequest.merge_commit_sha === run.head_sha;
+                  return (
+                    pullRequest.state === 'open' &&
+                    pullRequest.base?.ref === 'main' &&
+                    sameRepository &&
+                    sameBranch &&
+                    sameCommit
+                  );
+                })
+                .map(pullRequest => ({ pullRequest, baseSha: pullRequest.base.sha }));
+            }
+
+            const uniqueCandidates = [
+              ...new Map(candidates.map(candidate => [candidate.pullRequest.number, candidate])).values()
+            ];
+            if (uniqueCandidates.length !== 1) {
+              core.warning(
+                `Expected exactly one open main-branch pull request for CI run ${run.id}; found ${uniqueCandidates.length}.`
+              );
+              core.setOutput('ready', 'false');
+              return;
+            }
+
+            const selection = uniqueCandidates[0];
+            let producerIdentityTrusted = false;
+            try {
+              const expectedWorkflow = await github.rest.actions.getWorkflow({
+                owner,
+                repo,
+                workflow_id: workflowPath
+              });
+              producerIdentityTrusted =
+                run.workflow_id === expectedWorkflow.data.id &&
+                run.path === expectedWorkflow.data.path &&
+                expectedWorkflow.data.path === workflowPath;
+              if (!producerIdentityTrusted) {
+                core.warning(
+                  `Workflow run ${run.id} did not originate from the expected ${workflowPath} workflow.`
+                );
+              }
+            } catch (error) {
+              core.warning(`The expected ${workflowPath} workflow identity could not be verified.`);
+            }
+
+            let producerTrusted = false;
+            if (producerIdentityTrusted) {
+              try {
+                const [sourceWorkflow, baseWorkflow] = await Promise.all([
+                  getFileAtCommit(workflowPath, run.head_sha),
+                  getFileAtCommit(workflowPath, selection.baseSha)
+                ]);
+                producerTrusted = sourceWorkflow.equals(baseWorkflow);
+                if (!producerTrusted) {
+                  core.warning(
+                    `The CI workflow differs from the pull request base at ${selection.baseSha}; its Checkov artifact will not be trusted.`
+                  );
+                }
+              } catch (error) {
+                core.warning('The source CI workflow could not be verified against the pull request base.');
+              }
+            }
+
+            const artifacts = await github.paginate(
+              github.rest.actions.listWorkflowRunArtifacts,
+              { owner, repo, run_id: run.id, per_page: 100 }
+            );
+            const artifactName = `checkov-results-${run.run_attempt}`;
+            const matchingArtifacts = artifacts.filter(candidate => candidate.name === artifactName);
+            const runStartedAt = run.run_started_at ?? run.created_at;
+            const runStartTime = Date.parse(runStartedAt);
+            let artifact;
+            if (matchingArtifacts.length === 1) {
+              const candidate = matchingArtifacts[0];
+              const artifactCreatedTime = Date.parse(candidate.created_at);
+              if (
+                !candidate.expired &&
+                Number.isFinite(runStartTime) &&
+                Number.isFinite(artifactCreatedTime) &&
+                artifactCreatedTime >= runStartTime
+              ) {
+                artifact = candidate;
+              } else {
+                core.warning(
+                  `Artifact ${candidate.id} is expired or was not created during run attempt ${run.run_attempt}.`
+                );
+              }
+            } else {
+              core.warning(
+                `Expected exactly one ${artifactName} artifact for CI run ${run.id}; found ${matchingArtifacts.length}.`
+              );
+            }
+
+            const maximumArtifactBytes = 10 * 1024 * 1024;
+            const artifactAvailable = Boolean(
+              producerTrusted && artifact && artifact.size_in_bytes <= maximumArtifactBytes
+            );
+            if (artifact && artifact.size_in_bytes > maximumArtifactBytes) {
+              core.warning(`Checkov artifact ${artifact.id} exceeds ${maximumArtifactBytes} bytes.`);
+            }
+
+            core.setOutput('ready', 'true');
+            core.setOutput('artifact_available', String(artifactAvailable));
+            core.setOutput('artifact_id', artifact ? String(artifact.id) : '');
+            core.setOutput('artifact_name', artifact ? artifact.name : '');
+            core.setOutput('pr_number', String(selection.pullRequest.number));
+            core.setOutput('run_started_at', runStartedAt);
+
+      - name: Download Checkov findings
+        if: ${{ steps.resolve.outputs.ready == 'true' && steps.resolve.outputs.artifact_available == 'true' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ steps.resolve.outputs.artifact_name }}
+          path: checkov-report
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ github.event.workflow_run.id }}
+
+      - name: Create or update Checkov comment
+        if: ${{ always() && steps.resolve.outputs.ready == 'true' }}
+        uses: actions/github-script@v7
+        env:
+          ARTIFACT_AVAILABLE: ${{ steps.resolve.outputs.artifact_available }}
+          PR_NUMBER: ${{ steps.resolve.outputs.pr_number }}
+          SOURCE_RUN_ID: ${{ github.event.workflow_run.id }}
+          SOURCE_RUN_STARTED_AT: ${{ steps.resolve.outputs.run_started_at }}
+        with:
+          script: |
+            const fs = require('fs');
+            const reportPath = 'checkov-report/checkov-results.json';
+            const maximumReportBytes = 10 * 1024 * 1024;
+            const maximumDisplayedFindings = 25;
+            const markerPrefix = '<!-- checkov-pr-report';
+            const runId = process.env.SOURCE_RUN_ID;
+            const runStartedAt = process.env.SOURCE_RUN_STARTED_AT;
+            const marker = `${markerPrefix} source-run-id=${runId} source-run-at=${runStartedAt} -->`;
+
+            function parseFindings() {
+              if (process.env.ARTIFACT_AVAILABLE !== 'true') {
+                return { status: 'unavailable', findings: [] };
+              }
+
+              try {
+                const stat = fs.lstatSync(reportPath);
+                if (!stat.isFile() || stat.isSymbolicLink() || stat.size > maximumReportBytes) {
+                  return { status: 'unavailable', findings: [] };
+                }
+
+                const parsed = JSON.parse(fs.readFileSync(reportPath, 'utf8'));
+                const reports = Array.isArray(parsed) ? parsed : [parsed];
+                if (reports.length === 0) {
+                  return { status: 'unavailable', findings: [] };
+                }
+
+                const findings = [];
+                let resourceCount = 0;
+                for (const report of reports) {
+                  const summary = report?.summary;
+                  const results = report?.results;
+                  if (
+                    !report ||
+                    typeof report !== 'object' ||
+                    typeof report.check_type !== 'string' ||
+                    !summary ||
+                    typeof summary !== 'object' ||
+                    !results ||
+                    typeof results !== 'object' ||
+                    !Array.isArray(results.passed_checks) ||
+                    !Array.isArray(results.failed_checks) ||
+                    !Array.isArray(results.skipped_checks) ||
+                    !Array.isArray(results.parsing_errors) ||
+                    !Number.isInteger(summary.passed) ||
+                    !Number.isInteger(summary.failed) ||
+                    !Number.isInteger(summary.skipped) ||
+                    !Number.isInteger(summary.parsing_errors) ||
+                    !Number.isInteger(summary.resource_count) ||
+                    summary.passed !== results.passed_checks.length ||
+                    summary.failed !== results.failed_checks.length ||
+                    summary.skipped !== results.skipped_checks.length ||
+                    summary.parsing_errors !== results.parsing_errors.length ||
+                    summary.parsing_errors !== 0
+                  ) {
+                    return { status: 'unavailable', findings: [] };
+                  }
+
+                  resourceCount += summary.resource_count;
+                  for (const finding of results.failed_checks) {
+                    if (
+                      !finding ||
+                      typeof finding !== 'object' ||
+                      typeof finding.check_id !== 'string' ||
+                      typeof finding.check_name !== 'string' ||
+                      typeof finding.file_path !== 'string' ||
+                      typeof finding.resource !== 'string'
+                    ) {
+                      return { status: 'unavailable', findings: [] };
+                    }
+                    findings.push(finding);
+                  }
+                }
+
+                if (resourceCount <= 0) {
+                  return { status: 'unavailable', findings: [] };
+                }
+
+                return {
+                  status: findings.length === 0 ? 'clean' : 'findings',
+                  findings
+                };
+              } catch (error) {
+                core.warning('The Checkov artifact could not be parsed safely.');
+                return { status: 'unavailable', findings: [] };
+              }
+            }
+
+            function escapeCode(value, maximumLength = 240) {
+              return String(value)
+                .replace(/[\u0000-\u001f\u007f]+/g, ' ')
+                .replace(/@/g, '@&#8203;')
+                .replace(/`/g, "'")
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .slice(0, maximumLength);
+            }
+
+            const result = parseFindings();
+            const uniqueFindings = [];
+            const seen = new Set();
+            for (const finding of result.findings) {
+              const key = [finding.check_id, finding.file_path, finding.resource].join('\u0000');
+              if (!seen.has(key)) {
+                seen.add(key);
+                uniqueFindings.push(finding);
+              }
+            }
+
+            const { owner, repo } = context.repo;
+            const runUrl = `https://github.com/${owner}/${repo}/actions/runs/${runId}`;
+            const conventionsUrl = `https://github.com/${owner}/${repo}/blob/main/CONVENTIONS.md#8-security-scan-baseline--suppression-mechanism`;
+            const lines = [marker, '## Checkov security review', ''];
+
+            if (result.status === 'unavailable') {
+              lines.push(
+                'The Checkov report is unavailable, untrusted, or invalid for this CI run. Review the workflow logs before merging.',
+                ''
+              );
+            } else if (result.status === 'clean') {
+              lines.push('Checkov reported no advisory infrastructure security findings.', '');
+            } else {
+              lines.push(
+                `Checkov found **${uniqueFindings.length}** potential infrastructure security ${uniqueFindings.length === 1 ? 'issue' : 'issues'}.`,
+                '',
+                'Checkov is currently advisory and does not block this pull request. Please review and resolve applicable findings before merge.',
+                ''
+              );
+
+              for (const finding of uniqueFindings.slice(0, maximumDisplayedFindings)) {
+                const filePath = finding.file_path.replace(/^\/+/, '');
+                lines.push(
+                  `- **Check:** \`${escapeCode(finding.check_id, 80)}\``,
+                  `  - **Finding:** \`${escapeCode(finding.check_name)}\``,
+                  `  - **File:** \`${escapeCode(filePath)}\``,
+                  `  - **Resource:** \`${escapeCode(finding.resource)}\``
+                );
+              }
+
+              if (uniqueFindings.length > maximumDisplayedFindings) {
+                lines.push('', `Showing the first ${maximumDisplayedFindings} findings. Review the CI run for the complete report.`);
+              }
+
+              lines.push(
+                '',
+                `If a finding is an intentional blueprint simplification or confirmed false positive, document its suppression and justification according to [CONVENTIONS.md](${conventionsUrl}).`,
+                ''
+              );
+            }
+
+            lines.push(`[View the complete Checkov run](${runUrl})`);
+            const body = lines.join('\n');
+            const issueNumber = Number(process.env.PR_NUMBER);
+            const comments = await github.paginate(
+              github.rest.issues.listComments,
+              { owner, repo, issue_number: issueNumber, per_page: 100 }
+            );
+            const existing = comments.find(
+              comment =>
+                comment.user?.login === 'github-actions[bot]' &&
+                comment.body?.includes(markerPrefix)
+            );
+
+            if (existing) {
+              const existingTimestamp = existing.body.match(/source-run-at=([^\s]+)\s-->/)?.[1];
+              const existingRunId = existing.body.match(/source-run-id=(\d+)/)?.[1];
+              const existingTime = existingTimestamp ? Date.parse(existingTimestamp) : Number.NaN;
+              const currentTime = Date.parse(runStartedAt);
+              const existingIsNewer =
+                Number.isFinite(existingTime) &&
+                Number.isFinite(currentTime) &&
+                (
+                  existingTime > currentTime ||
+                  (existingTime === currentTime && existingRunId && BigInt(existingRunId) > BigInt(runId))
+                );
+
+              if (existingIsNewer) {
+                core.notice(`Skipping stale Checkov report from CI run ${runId}.`);
+                return;
+              }
+
+              await github.rest.issues.updateComment({
+                owner,
+                repo,
+                comment_id: existing.id,
+                body
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: issueNumber,
+                body
+              });
+            }

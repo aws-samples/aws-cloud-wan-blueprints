@@ -21,15 +21,21 @@
 - [ ] Generated Terraform READMEs were regenerated, not hand-edited
       (`terraform-docs --config .config/.terraform-docs.yaml <dir>`).
 - [ ] Every new IaC source file carries the MIT-0 license header.
-- [ ] Any new Checkov suppression includes a justification (baseline comment or inline `:reason`).
+- [ ] I reviewed advisory Checkov findings, fixed applicable issues, and included a
+      justification for every new suppression (baseline comment or inline `:reason`).
 
 ## For new or changed patterns
 
-- [ ] CloudFormation and Terraform implementations are in parity, or the
-      exception is documented in `blueprint.yaml` and the pattern README.
-- [ ] `blueprint.yaml` is updated so the catalog stays the source of truth.
+- [ ] CloudFormation and Terraform implementations are in parity.
+- [ ] Pattern catalogs in `README.md`, `infra/README.md`, and the `SKILLS.md`
+      infrastructure selector are updated so human and agent indexes agree.
 - [ ] The Cloud WAN network policy shown in the docs matches the policy the IaC
       actually deploys.
+
+## For changed policy capability pages
+
+- [ ] Policy indexes in `README.md`, `policy/README.md`, and `SKILLS.md` are
+      updated, including the assembly order and any affected constraints.
 
 ## Testing
 

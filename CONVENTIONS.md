@@ -224,6 +224,8 @@ Never claim an implementation that is not on disk. The human and agent-facing ca
 
 CI runs [Checkov](https://www.checkov.io/) over the repository using the committed [`.checkov.yaml`](.checkov.yaml) baseline at the repo root. These blueprints are intentionally minimal teaching examples, so some findings map to deliberate demo simplifications (open egress, EC2 instances without instance profiles, short log retention) or to confirmed false positives (SSH ingress that is actually scoped to the EC2 Instance Connect security group).
 
+Checkov findings are advisory rather than a merge gate. The unprivileged CI workflow uploads a JSON report, and the separate [`Checkov PR report`](.github/workflows/checkov-pr-comment.yml) workflow updates one bounded PR comment recommending that applicable findings be fixed before merge. The reporter runs with `pull-requests: write` in the trusted default-branch context, so it must never check out or execute pull-request content. Its downloaded artifact is untrusted data: parse only the fixed JSON report, enforce size and display limits, and escape values before rendering them.
+
 There are **two ways to suppress a finding**, both supported:
 
 1. **Repo-wide**: add the check ID to the `skip-check` list in `.checkov.yaml`, with a trailing one-line justification comment. Use this for simplifications/false positives that recur across patterns.
@@ -262,7 +264,7 @@ Notes:
 - Pre-commit additionally runs repository-hygiene hooks such as trailing-whitespace, end-of-file, merge-conflict, YAML, and JSON checks. CI is authoritative for blocking behavior; for example, Checkov is currently non-blocking in CI even though its local hook reports findings.
 - The `discover` job **enumerates pattern directories automatically** by globbing `infra/` for `*.tf` and `cloudformation/*.yaml`. Adding or restructuring patterns does not require editing the workflow — which is what made the v2 migration possible without rewriting CI.
 - The `policy` job and `check-policies` pre-commit hook run `.github/scripts/check_policies.py`. Its only external dependency is PyYAML, needed to read the CloudFormation templates. CI installs PyYAML `6.0.2`; because the pre-commit hook uses `language: system`, contributors must install the same version in their host Python environment.
-- `checkov` is the one non-blocking gate. Flip `soft_fail: true` to `false` once the baseline is fully triaged.
+- `checkov` is non-blocking for findings. It uploads `checkov-results.json`, and the separate trusted `Checkov PR report` workflow publishes or updates the advisory PR comment. The reporter is asynchronous and is not part of the `ci-passed` branch-protection gate.
 - `ci-passed` is an aggregator job that depends on every other job. Configure **only** that check in branch protection. If you add a new top-level job, add it to `ci-passed`'s `needs` list.
 - Version pins in the table are deliberate. For host-installed tools, use the CI version documented in [`CONTRIBUTING.md`](CONTRIBUTING.md) when reproducible local parity matters. The sibling [Amazon VPC Lattice Blueprints](https://github.com/aws-samples/amazon-vpc-lattice-blueprints) repository runs the same pipeline shape; when raising a shared tool version, prefer raising it in both.
 

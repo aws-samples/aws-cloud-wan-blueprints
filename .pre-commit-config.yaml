@@ -5,9 +5,10 @@
 # Local pre-commit configuration for AWS Cloud WAN Blueprints
 # =============================================================================
 #
-# This file lets contributors run the SAME static checks locally that the CI
-# workflow (.github/workflows/ci.yml) runs on every pull request, so issues can
-# be fixed before pushing instead of round-tripping through CI.
+# This file lets contributors run CI-ALIGNED static checks locally before a
+# pull request, so issues can be fixed without round-tripping through CI.
+# Pre-commit also runs local repository-hygiene hooks; CI remains authoritative
+# for which findings are blocking.
 #
 # Install and run:
 #   pip install pre-commit
@@ -18,9 +19,9 @@
 # terraform-docs, and lychee. cfn-lint and checkov are installed automatically by
 # pre-commit into isolated hook environments from the pinned revs below.
 #
-# CI <-> pre-commit lockstep: the checks, tools, and pinned versions here are
-# kept in step with .github/workflows/ci.yml. A change to one MUST be mirrored
-# in the other (see CONVENTIONS.md "CI / pre-commit lockstep").
+# CI <-> pre-commit alignment: checks and versions that have counterparts in
+# both files are kept in step with .github/workflows/ci.yml. Local-only hygiene
+# hooks need no CI counterpart (see CONVENTIONS.md "CI-aligned repository checks").
 #
 # All hook repo revs are pinned to specific tags for reproducibility.
 # =============================================================================
@@ -66,7 +67,7 @@ repos:
   # ---------------------------------------------------------------------------
   # cfn-lint (official AWS CloudFormation linter hook).
   #
-  # Pinned to v1.46.0 to stay in lockstep with CI (`pip install cfn-lint==1.46.0`).
+  # Pinned to v1.54.0 to stay in lockstep with CI (`pip install cfn-lint==1.54.0`).
   # Scoped to CloudFormation templates only.
   #
   # This check was previously disabled in this repository with the note
@@ -77,7 +78,7 @@ repos:
   # templates use, so the check is re-enabled here.
   # ---------------------------------------------------------------------------
   - repo: https://github.com/aws-cloudformation/cfn-lint
-    rev: v1.46.0
+    rev: v1.54.0
     hooks:
       - id: cfn-lint
         files: ^infra/.*/cloudformation/.*\.(yaml|yml)$
@@ -87,9 +88,9 @@ repos:
   #
   # The default hook entry is `checkov -d .`; we override the entry to drop the
   # `-d .` so that scope and framework selection come entirely from the
-  # committed `.checkov.yaml` baseline (which sets `directory: [patterns]` and
-  # `framework: [terraform, cloudformation]`). This makes the local scan
-  # identical to CI, which runs with `config_file: .checkov.yaml`.
+  # committed `.checkov.yaml` baseline (which sets `directory: [.]` and
+  # `framework: [terraform, cloudformation]`). This keeps local and CI scans on
+  # the same repository scope.
   # ---------------------------------------------------------------------------
   - repo: https://github.com/bridgecrewio/checkov
     rev: "3.2.500"
@@ -99,45 +100,36 @@ repos:
         args:
           - "--config-file"
           - ".checkov.yaml"
-        # Trigger on Terraform and CloudFormation changes (the config file
-        # decides what is actually scanned). pass_filenames stays false (hook
+        # Trigger on Terraform, CloudFormation, or baseline changes. The config
+        # decides what is actually scanned. pass_filenames stays false (hook
         # default) so the baseline's directory scope is authoritative.
-        files: (\.tf$|^infra/.*/cloudformation/.*\.(yaml|yml)$)
+        files: (\.tf$|^infra/.*/cloudformation/.*\.(yaml|yml)$|^\.checkov\.yaml$)
         exclude: \.terraform/.*$
 
   # ---------------------------------------------------------------------------
   # Cloud WAN policy validation -> mirrors the CI `policy` job.
   #
-  # Local hooks shelling out to the repo's own scripts. They are dependency-free
-  # (Python standard library only) so there is nothing to install, and they contact
-  # nothing. `pass_filenames: false` because each script decides its own scope.
+  # Local hook shelling out to .github/scripts/check_policies.py -> mirrors the CI
+  # `policy` job. `pass_filenames: false` because the script decides its own scope.
   # ---------------------------------------------------------------------------
   - repo: local
     hooks:
-      - id: validate-policies
-        name: Validate Cloud WAN policies (baselines + examples)
-        description: Structure, cross-reference, and Cloud WAN constraint checks.
-        entry: python3 tools/validate_policy.py --all
+      - id: check-policies
+        name: Cloud WAN policy checks
+        description: >
+          Generated CloudFormation templates match their suffix-paired baseline JSON,
+          policy documents are structurally valid, and inline JSON snippets in
+          policy/*.md parse.
+        entry: python3 .github/scripts/check_policies.py
         language: system
         pass_filenames: false
-        files: (^infra/.*/baseline\.json$|^policy/examples/.*\.json$|^tools/validate_policy\.py$)
-
-      - id: validate-policy-snippets
-        name: Validate inline JSON snippets in policy/*.md
-        description: Every fenced json block in policy/*.md must be a valid policy fragment.
-        entry: python3 tools/validate_policy.py --snippets policy
-        language: system
-        pass_filenames: false
-        files: (^policy/.*\.md$|^tools/validate_policy\.py$)
-
-      - id: sync-cfn-policy
-        name: Check generated CloudFormation policy templates are in sync
-        description: core_network.yaml must match the baseline.json it is generated from.
-        entry: python3 tools/sync_cfn_policy.py --all --check
-        language: system
-        pass_filenames: false
-        files: (^infra/.*/baseline\.json$|^infra/.*/cloudformation/core_network\.yaml$|^tools/sync_cfn_policy\.py$)
-
+        files: >
+          (?x)^(
+            infra/.*/baseline.*\.json
+            |infra/.*/cloudformation/core_network.*\.yaml
+            |policy/.*\.md
+            |\.github/scripts/check_policies\.py
+          )$
   # ---------------------------------------------------------------------------
   # Markdown link check -> mirrors CI `markdown-links` job (lychee).
   #

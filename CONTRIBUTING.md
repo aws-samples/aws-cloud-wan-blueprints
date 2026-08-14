@@ -43,6 +43,8 @@ GitHub provides additional documentation on [forking a repository](https://docs.
 
 This repository ships a [`pre-commit`](https://pre-commit.com/) configuration ([`.pre-commit-config.yaml`](.pre-commit-config.yaml)) aligned with the **static** domain checks run in CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)), so you can catch and fix most issues locally before pushing instead of round-tripping through CI. Pre-commit also runs local repository-hygiene checks, while CI remains authoritative for which findings are blocking. Together, the checks enforce the repository conventions in [CONVENTIONS.md](CONVENTIONS.md) (formatting, linting, generated-doc drift, link health, and security scanning).
 
+On pull requests, Checkov remains advisory. CI uploads its machine-readable findings, and the trusted [`Checkov PR report`](.github/workflows/checkov-pr-comment.yml) workflow creates or updates one PR comment with a bounded summary. Review and resolve applicable findings before merge. If a finding is an intentional blueprint simplification or confirmed false positive, document the suppression and its justification according to [CONVENTIONS.md](CONVENTIONS.md#8-security-scan-baseline--suppression-mechanism).
+
 All hooks are **static**: they need **no AWS credentials** and provision nothing. Terraform validation runs `terraform init -backend=false` followed by `terraform validate`, so no remote state backend or cloud access is involved.
 
 ### Required local tools
@@ -109,6 +111,7 @@ The local pre-commit setup and CI provide two views of the repository's **domain
 
 - **Adding or removing a shared domain check** — add or remove the matching hook and CI job/step. If you add a new top-level CI job, also add it to the `needs` list of the `ci-passed` aggregator, which is the single check configured in branch protection. Local-only hygiene hooks do not need CI counterparts.
 - **Bumping a tool version** — keep counterpart versions aligned where both environments pin the tool. Update the hook `rev:` or pinned dependency in `.pre-commit-config.yaml`, the corresponding CI pin, and the version table in [Required local tools](#required-local-tools). For host-installed tools, update the documented CI version even though pre-commit cannot enforce the local binary version.
+- **Changing Checkov reporting** — keep the JSON artifact contract in `ci.yml` and the parser/comment behavior in `checkov-pr-comment.yml` compatible. The reporter is privileged: it must never check out or execute pull-request content, and it must continue treating the downloaded report as untrusted data.
 
 A pull request that changes only one side of an existing counterpart should be flagged in review.
 

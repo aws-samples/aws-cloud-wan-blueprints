@@ -7,10 +7,10 @@
 # backend is initialized, and no resource is created. Every job is a static
 # check over the committed sources.
 #
-# CI <-> pre-commit lockstep: the checks, tools, and pinned versions in this
-# workflow must stay in step with .pre-commit-config.yaml. A change to one
-# (adding/removing a check, bumping a tool version) MUST be mirrored in the other
-# so local and CI stay consistent (see CONVENTIONS.md "CI / pre-commit lockstep").
+# CI <-> pre-commit alignment: domain checks and versions that have counterparts
+# in both files stay in step with .pre-commit-config.yaml. Pre-commit also runs
+# local hygiene hooks, while CI defines blocking behavior (see CONVENTIONS.md
+# "CI-aligned repository checks").
 #
 # Pipeline shape:
 #   * discover          - AUTOMATICALLY enumerates the infra/ pattern directories so
@@ -22,11 +22,13 @@
 #   * tflint            - per-pattern `tflint` with the AWS ruleset (.tflint.hcl).
 #   * cfn-lint          - per-template `cfn-lint` (handles AWS::LanguageExtensions).
 #   * terraform-docs    - generated-README drift check for dirs with a `.header.md`.
-#   * policy            - Cloud WAN policy validation: baselines + examples, the inline
-#                         JSON snippets in policy/*.md, and generated-CFN-policy drift.
+#   * policy            - Cloud WAN policy checks: generated CloudFormation
+#                         templates match suffix-paired baseline JSON documents,
+#                         policy documents are structurally valid, and inline JSON
+#                         snippets in policy/*.md parse.
 #   * markdown-links    - repository markdown link check (lychee).
-#   * checkov           - IaC security scan over the repo, using `.checkov.yaml`
-#                         (the committed, tunable baseline).
+#   * checkov           - advisory IaC security scan using `.checkov.yaml`; uploads
+#                         JSON findings for the trusted PR-comment workflow.
 #
 # Action versions are pinned to specific majors. Explicit failure annotations
 # (GitHub `::error` workflow commands naming the pattern path + check) mean a
@@ -277,7 +279,7 @@ jobs:
 
       - name: Install cfn-lint
         shell: bash
-        run: pip install "cfn-lint==1.46.0"
+        run: pip install "cfn-lint==1.54.0"
 
       - name: cfn-lint ${{ matrix.file }}
         shell: bash
@@ -337,22 +339,20 @@ jobs:
           exit "${fail}"
 
   # ===========================================================================
-  # policy: validate Cloud WAN network policy documents.
+  # policy: pre-merge checks on the policies this repository ships.
   #
-  # Three things are checked:
-  #   * every infra pattern's baseline.json and every policy/examples/*.json passes
-  #     the structural, cross-reference, and Cloud WAN constraint checks, including
-  #     the attachment tagging contract of the pattern it belongs to;
-  #   * every fenced ```json block in policy/*.md is valid as a policy FRAGMENT, so
-  #     inline snippets in the documentation cannot rot;
-  #   * each generated CloudFormation core-network template still matches the
-  #     baseline.json it was generated from.
+  #   1. Each generated CloudFormation PolicyDocument matches its suffix-paired
+  #      baseline JSON, so a change to one cannot silently leave the other behind.
+  #   2. Every infra/ baseline*.json - the only complete, deployable policies this
+  #      repository ships - is structurally valid.
+  #   3. Every fenced ```json block in policy/*.md parses.
   #
-  # The scripts are dependency-free (Python standard library only), so there is no
-  # install step. Nothing here contacts AWS.
+  # It deliberately does NOT reimplement Cloud WAN's own validation. Anyone adapting a
+  # blueprint should deploy it and read the errors Cloud WAN returns - those are
+  # authoritative. This job exists so that what we merge is internally consistent.
   # ===========================================================================
   policy:
-    name: Cloud WAN policy validation
+    name: Cloud WAN policy checks
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -363,42 +363,20 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Validate baseline and example policies
+      - name: Install PyYAML
         shell: bash
-        run: |
-          set +e
-          echo "::group::validate_policy.py --all"
-          python3 tools/validate_policy.py --all
-          status=$?
-          echo "::endgroup::"
-          if [ "${status}" -ne 0 ]; then
-            echo "::error title=policy validation::[validate_policy] a baseline or example policy has errors (see above)"
-            exit "${status}"
-          fi
+        run: pip install "pyyaml==6.0.2"
 
-      - name: Validate inline JSON snippets in policy/*.md
+      - name: Check policies
         shell: bash
         run: |
           set +e
-          echo "::group::validate_policy.py --snippets policy"
-          python3 tools/validate_policy.py --snippets policy
+          echo "::group::check_policies.py"
+          python3 .github/scripts/check_policies.py
           status=$?
           echo "::endgroup::"
           if [ "${status}" -ne 0 ]; then
-            echo "::error title=policy snippets::[validate_policy] an inline JSON snippet in policy/*.md is invalid (see above)"
-            exit "${status}"
-          fi
-
-      - name: Check generated CloudFormation policy templates are in sync
-        shell: bash
-        run: |
-          set +e
-          echo "::group::sync_cfn_policy.py --all --check"
-          python3 tools/sync_cfn_policy.py --all --check
-          status=$?
-          echo "::endgroup::"
-          if [ "${status}" -ne 0 ]; then
-            echo "::error title=policy sync::[sync_cfn_policy] a generated core_network.yaml is stale. Regenerate with: python3 tools/sync_cfn_policy.py --all"
+            echo "::error title=policy checks::[check_policies] see the failures above. If a baseline JSON document changed, its generated CloudFormation template needs the same change."
             exit "${status}"
           fi
 
@@ -433,8 +411,8 @@ jobs:
   # checkov: static IaC security scan over the infrastructure patterns.
   #
   # References the committed `.checkov.yaml` baseline (the single source of truth
-  # for what is suppressed and why). `soft_fail` keeps findings non-blocking for
-  # now; flip it to a blocking gate once the baseline is fully triaged.
+  # for what is suppressed and why). Findings remain advisory through `soft_fail`,
+  # but the JSON report is uploaded for the separate trusted PR-comment workflow.
   # ===========================================================================
   checkov:
     name: Checkov security scan
@@ -443,28 +421,41 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Prepare Checkov output directory
+        shell: bash
+        run: |
+          rm -rf .checkov-output
+          mkdir -p .checkov-output
+
       - name: Checkov
+        id: checkov
         uses: bridgecrewio/checkov-action@v12
         with:
           directory: .
           config_file: .checkov.yaml
           soft_fail: true
-          # `output_format: cli` + `quiet: true` keeps the human-readable CLI
-          # report and suppresses only the PASSED checks. FAILED checks are still
-          # printed in full, including the offending file path and the Checkov
-          # check ID (e.g. `CKV_AWS_*`), so a maintainer can see exactly which
-          # pattern file and which check failed. When this is hardened from
-          # `soft_fail` to a blocking gate, that same per-file
-          # + per-check output is what surfaces in the job log.
-          output_format: cli
+          # Keep readable findings in this job and write machine-readable output
+          # to a directory cleared after checkout. The reporter treats the JSON
+          # as untrusted data and never checks out or executes pull-request content.
+          output_format: cli,json
+          output_file_path: console,.checkov-output/checkov-results.json
           quiet: true
+
+      - name: Upload Checkov findings
+        if: ${{ always() && steps.checkov.outcome == 'success' && hashFiles('.checkov-output/checkov-results.json') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: checkov-results-${{ github.run_attempt }}
+          path: .checkov-output/checkov-results.json
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 9
 
   # ===========================================================================
   # ci-passed: single aggregator gate.
   #
-  # This job depends on every other job and succeeds only if none of them
-  # failed/were cancelled. Configure only this check ("CI passed") in the branch
-  # protection ruleset.
+  # This job depends on every other job and succeeds only when every dependency
+  # succeeds. Configure only this check ("CI passed") in branch protection.
   #
   # Maintenance: if you add a new TOP-LEVEL job to this workflow, add it to the
   # `needs` list below so it is included in the gate.
@@ -493,8 +484,8 @@ jobs:
           results="${{ join(needs.*.result, ' ') }}"
           echo "Upstream job results: ${results}"
           for r in ${results}; do
-            if [ "${r}" = "failure" ] || [ "${r}" = "cancelled" ]; then
-              echo "::error title=CI passed::A required CI job did not pass (result: ${r}). See the failed job above."
+            if [ "${r}" != "success" ]; then
+              echo "::error title=CI passed::A required CI job did not succeed (result: ${r}). See the affected job above."
               exit 1
             fi
           done
