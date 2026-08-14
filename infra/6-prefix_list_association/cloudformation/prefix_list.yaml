@@ -25,7 +25,7 @@ Resources:
   PrefixList:
     Type: AWS::EC2::PrefixList
     Properties:
-      PrefixListName: !Sub 'prefixlist-${Identifier}'
+      PrefixListName: !Sub 'prefix-list-${Identifier}'
       AddressFamily: IPv4
       MaxEntries: 2
       Entries:
@@ -35,7 +35,7 @@ Resources:
           Description: !Sub 'Filtered by the ${PrefixListAlias} routing policy'
       Tags:
         - Key: Name
-          Value: !Sub 'prefixlist-${Identifier}'
+          Value: !Sub 'prefix-list-${Identifier}'
 
   # The association gives the prefix list an ALIAS on this core network
   PrefixListAssociation:

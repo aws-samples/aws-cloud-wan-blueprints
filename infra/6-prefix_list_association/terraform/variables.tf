@@ -20,7 +20,7 @@ variable "aws_regions" {
 }
 
 # ---------- THE TWO POLICY DOCUMENTS ----------
-# The core network is created with `policy_document`, which must NOT reference the prefix list alias - the association does not exist yet. 
+# The core network is created with `policy_document`, which must NOT reference the prefix list alias - the association does not exist yet.
 # Once it does, `prefix_list_policy_document` is attached, and that one may reference the alias.
 variable "policy_document" {
   type        = string

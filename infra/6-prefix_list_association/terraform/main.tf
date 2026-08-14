@@ -44,7 +44,7 @@ resource "aws_networkmanager_core_network_policy_attachment" "prefix_list_policy
 resource "aws_ec2_managed_prefix_list" "prefix_list" {
   provider = aws.awsoregon
 
-  name           = "prefixlist-${var.identifier}"
+  name           = "prefix-list-${var.identifier}"
   address_family = "IPv4"
   max_entries    = length(var.prefix_list_cidrs)
 }

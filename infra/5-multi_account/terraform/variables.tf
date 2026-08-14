@@ -36,7 +36,7 @@ variable "policy_document" {
 # Who the core network is shared with. Pick whichever you can test with: a single
 # account, an organizational unit, or a whole organization.
 #
-# `account` takes a 12-digit account ID and works whether or not that account is in your organization. 
+# `account` takes a 12-digit account ID and works whether or not that account is in your organization.
 # `organizational_unit` and `organization` take an Organizations ARN and need RAM sharing with AWS Organizations enabled once, from the management account: aws ram enable-sharing-with-aws-organization`.
 variable "share_with" {
   type = object({

@@ -34,5 +34,3 @@ provider "aws" {
   region = var.aws_regions.ireland
   alias  = "awsireland"
 }
-
-
