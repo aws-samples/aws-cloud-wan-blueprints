@@ -2,8 +2,7 @@
 
 In this pattern, we want to show how a core network is shared with other AWS accounts using AWS Resource Access Manager.
 
-<!-- DIAGRAM PLACEHOLDER -->
-> _Architecture diagram to be added._
+![Multi-account architecture](../../images/5-multi_account.png)
 
 ## Implementations
 

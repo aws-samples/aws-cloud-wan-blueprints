@@ -2,7 +2,7 @@
 
 In this pattern, we want to show a simple AWS Cloud WAN implementation - focusing on how VPCs connect to a core network. Having multiple VPCs per Region, users can test global traffic segmentation, communication between segments, and segment isolation.
 
-![Basic architecture](../../../images/patterns_simple_architecture.png)
+![Basic architecture](../../../images/1-basic.png)
 
 See [the pattern README](../README.md) for what this builds, the attachment tags it applies, what its baseline policy demonstrates, and how to verify it.
 

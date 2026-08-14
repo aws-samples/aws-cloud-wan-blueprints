@@ -3,8 +3,7 @@
 
 In this pattern, we want to show how AWS Cloud WAN integrates with AWS Site-to-Site VPN and AWS Direct Connect to achieve hybrid connectivity.
 
-<!-- DIAGRAM PLACEHOLDER -->
-> \_Architecture diagram to be added.\_
+![Hybrid architecture](../../../images/4-hybrid.png)
 
 See [the pattern README](../README.md) for what this builds, how its attachments associate, what its baseline policy configures, and how to verify it.
 

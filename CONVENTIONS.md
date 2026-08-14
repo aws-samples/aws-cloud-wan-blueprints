@@ -182,9 +182,9 @@ When a pattern's docs claim a routing behaviour, the **network policy in the doc
 
 ## 6. Network-policy authoring
 
-### v2: baseline documents and generated CloudFormation
+### Baseline documents and generated CloudFormation
 
-In the normal v2 layout, an `infra/` pattern's `baseline.json` is the **single source of truth** for its network policy. When a service dependency requires more than one policy application, a pattern may add suffix-paired documents such as `baseline_prefix_list.json` and `cloudformation/core_network_prefix_list.yaml`. The unsuffixed pair remains the policy used to create the core network; each suffixed pair represents a later stage and must be documented in the pattern README.
+In the normal layout, an `infra/` pattern's `baseline.json` is the **single source of truth** for its network policy. When a service dependency requires more than one policy application, a pattern may add suffix-paired documents such as `baseline_prefix_list.json` and `cloudformation/core_network_prefix_list.yaml`. The unsuffixed pair remains the policy used to create the core network; each suffixed pair represents a later stage and must be documented in the pattern README.
 
 - **Terraform** reads each policy document with `file(...)`. The `aws_networkmanager_core_network_policy_document` data source is deliberately **not** used, so a policy is not authored a second time in HCL.
 - **CloudFormation** cannot take a document this size as a stack parameter (parameters cap at 4096 characters), so each `cloudformation/core_network*.yaml` is **generated** from the suffix-paired `baseline*.json`:
@@ -262,7 +262,7 @@ Notes:
 
 - Everything is **static**. No job configures AWS credentials, initializes a state backend, or creates a resource. `terraform validate` runs behind `terraform init -backend=false`.
 - Pre-commit additionally runs repository-hygiene hooks such as trailing-whitespace, end-of-file, merge-conflict, YAML, and JSON checks. CI is authoritative for blocking behavior; for example, Checkov is currently non-blocking in CI even though its local hook reports findings.
-- The `discover` job **enumerates pattern directories automatically** by globbing `infra/` for `*.tf` and `cloudformation/*.yaml`. Adding or restructuring patterns does not require editing the workflow — which is what made the v2 migration possible without rewriting CI.
+- The `discover` job **enumerates pattern directories automatically** by globbing `infra/` for `*.tf` and `cloudformation/*.yaml`. Adding or restructuring patterns does not require editing the workflow — which is what made the repository restructuring possible without rewriting CI.
 - The `policy` job and `check-policies` pre-commit hook run `.github/scripts/check_policies.py`. Its only external dependency is PyYAML, needed to read the CloudFormation templates. CI installs PyYAML `6.0.2`; because the pre-commit hook uses `language: system`, contributors must install the same version in their host Python environment.
 - `checkov` is non-blocking for findings. It uploads `checkov-results.json`, and the separate trusted `Checkov PR report` workflow publishes or updates the advisory PR comment. The reporter is asynchronous and is not part of the `ci-passed` branch-protection gate.
 - `ci-passed` is an aggregator job that depends on every other job. Configure **only** that check in branch protection. If you add a new top-level job, add it to `ci-passed`'s `needs` list.

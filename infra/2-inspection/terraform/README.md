@@ -3,8 +3,7 @@
 
 In this pattern, we want to show how AWS Cloud WAN steers traffic through a firewall using service insertion - adding an Inspection VPC with AWS Network Firewall in each Region. Users can test egress (internet-bound) inspection, east-west inspection between segments, and how segment isolation behaves when only some traffic is inspected.
 
-<!-- DIAGRAM PLACEHOLDER -->
-> \_Architecture diagram to be added.\_
+![Inspection architecture](../../../images/2-inspection.png)
 
 See [the pattern README](../README.md) for what this builds, the attachment tags it applies, what its baseline policy configures, and how to verify it.
 

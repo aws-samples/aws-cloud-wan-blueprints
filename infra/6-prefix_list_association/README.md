@@ -2,9 +2,6 @@
 
 In this pattern, we want to show how a managed prefix list is associated with a core network so a routing policy can match on its alias, and how to deploy that without hitting the circular dependency between the two.
 
-<!-- DIAGRAM PLACEHOLDER -->
-> _Architecture diagram to be added._
-
 ## Implementations
 
 | IaC | Directory |

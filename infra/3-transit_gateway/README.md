@@ -2,8 +2,7 @@
 
 In this pattern, we want to show how AWS Cloud WAN connects to AWS Transit Gateway using a peering connection - and how segmentation can be configured on top of that peering. Users can test global traffic segmentation, communication between segments, and segment isolation for workloads that reach the core network through a Transit Gateway.
 
-<!-- DIAGRAM PLACEHOLDER -->
-> _Architecture diagram to be added._
+![Transit Gateway peering architecture](../../images/3-transit_gateway.png)
 
 ## Implementations
 

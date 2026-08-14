@@ -2,16 +2,20 @@
 
 Welcome to AWS Cloud WAN Blueprints!
 
-This project contains a collection of AWS Cloud WAN patterns implemented in [AWS CloudFormation](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/Welcome.html) and [Terraform](https://developer.hashicorp.com/terraform) that demonstrate how to configure and deploy global networks using [AWS Cloud WAN](https://aws.amazon.com/cloud-wan/).
+This project demonstrates how to design, configure, and deploy global networks using [AWS Cloud WAN](https://aws.amazon.com/cloud-wan/). In Cloud WAN, the **network policy** is where your design lives — a declarative document that defines segments, sharing, inspection, and routing behavior. The blueprints are therefore organised around that document: guidance and best practices for everything a policy can express, plus deployable infrastructure building blocks (implemented in both [AWS CloudFormation](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/Welcome.html) and [Terraform](https://developer.hashicorp.com/terraform)) to deploy and test the policies you build.
+
+> [!TIP]
+> **Building with an AI agent?** Drop [`SKILLS.md`](./SKILLS.md) into your agent's context (system/skill file, retrieved doc, or pasted reference). It teaches the agent how to reason about Cloud WAN and how to turn your requirements into a complete network policy, a matching infrastructure pattern, and a validation plan — grounded in this repository's conventions. See [Generating a policy from your requirements](#generating-a-policy-from-your-requirements) below.
 
 ## Motivation
 
-AWS Cloud WAN simplifies the configuration and management of global networks by providing a centralized, policy-driven approach to building multi-region connectivity. While Cloud WAN abstracts away much of the complexity of traditional AWS networking (such as manual Transit Gateway peering, static routing, or associations and propagations), understanding all the service's capabilities can be overwhelming, especially when designing production-grade architectures.
+AWS Cloud WAN simplifies the configuration and management of global networks by providing a centralized, policy-driven approach to building networks at scale in AWS. While Cloud WAN abstracts away much of the complexity of traditional AWS networking (such as manual Transit Gateway peering, static routing, or associations and propagations), understanding all the service's capabilities can be overwhelming, especially when designing production-grade architectures — and because the design lives in the network policy, most of that learning curve is about what the policy can express.
 
-AWS customers have asked for practical examples and best practices that demonstrate how to leverage Cloud WAN's full potential. These blueprints provide real-world use cases with complete, tested implementations that teams can use for:
+AWS customers have asked for practical examples and best practices that demonstrate how to leverage Cloud WAN's full potential. These blueprints provide tested infrastructure building blocks and composable policy guidance that teams can use for:
 
 - **Proof of Concepts (PoCs)**: Quickly validate Cloud WAN capabilities in your environment.
 - **Testing and learning**: Understand how different features work together through hands-on examples.
+- **Policy design**: Compose the network policy that expresses your requirements — from the best-practice guidance and snippets in [`policy/`](./policy/), or generated with an AI agent through [`SKILLS.md`](./SKILLS.md).
 - **Starting point**: Use as a foundation for your production network configurations.
 - **Best practices**: Learn recommended patterns for common networking scenarios.
 
@@ -21,220 +25,93 @@ With Cloud WAN Blueprints, customers can configure and deploy purpose-built glob
 
 AWS Cloud WAN Blueprints have been designed to be consumed in the following manners:
 
-1. **Reference**: Users can refer to the patterns and snippets provided to help guide them to their desired solution. Users will typically view how the pattern or snippet is configured to achieve the desired end result and then replicate that in their environment.
+1. **Reference**: Use the [`policy/`](./policy/) pages to understand what a network policy can express — each capability's behavior, best practices, and caveats — and the [`infra/`](./infra/) patterns to see how each attachment type is created and connected to a core network. Learn how a construct works here, then replicate it in your own environment.
 
-2. **Copy & Paste**: Users can copy and paste the patterns and snippets into their own environment, using Cloud WAN Blueprints as the starting point for their implementation. Users can then adapt the initial pattern to customize it to their specific needs.
+2. **Compose your policy**: Assemble the policy that expresses your requirements from the `policy/` snippets — by hand, or by giving [`SKILLS.md`](./SKILLS.md) to an AI agent that assembles and checks it for you (see [Generating a policy from your requirements](#generating-a-policy-from-your-requirements)). This is where most of your design effort should go: two networks with identical infrastructure behave completely differently depending on their policies.
 
-**AWS Cloud WAN Blueprints are not intended to be consumed as-is directly from this project**. The patterns provided only contain `variables` when certain information is required to deploy the pattern and generally use local variables. If you wish to deploy the patterns into a different AWS Region or with other changes, it is recommended that you make those modifications locally before applying the pattern.
+3. **Deploy and adapt**: Copy the `infra/` pattern whose attachment types match what you need to connect, point it at your policy, and adapt it locally — Regions, CIDRs, tags — to fit your environment.
 
-Every `infra/` pattern deploys across two AWS Regions (`us-east-1` and `eu-west-1`) — Cloud WAN is a global service, and a single-Region example would hide the cross-Region behaviour that is the point of it.
+**AWS Cloud WAN Blueprints are not intended to be consumed as-is directly from this project**. Baseline policies exist to make the infrastructure patterns deploy and forward traffic out of the box — they are teaching examples, not recommendations for your network. Likewise, the patterns generally use local variables and only expose `variables` where information is required to deploy; if you wish to deploy into different AWS Regions or with other changes, make those modifications locally before applying the pattern.
 
 ## Structure
 
-AWS Cloud WAN Blueprints separates two things: **deployable infrastructure** and **what a
-network policy can express**. A Cloud WAN answer is a policy document, and what
-differentiates most designs is that document rather than the infrastructure underneath it —
-inspection does not care whether an attachment is a VPC or a VPN.
+A Cloud WAN design can combine routing domains, attachment types, segment sharing, inspection, route controls, Regions, and account boundaries — so the number of complete end-to-end architectures is effectively unbounded. A repository with one directory per architecture would always be incomplete, and hard to keep consistent as the service evolves. What *is* bounded is the set of **building blocks**, and what differentiates most designs is the **network policy** rather than the infrastructure underneath it. So the blueprints are organised as three composable layers:
 
-So there is no directory per use case. There is infrastructure, and there is policy.
+| Layer | Contains | Organised by |
+|-------|----------|--------------|
+| [`infra/`](./infra/) | **Deployable infrastructure** patterns, each shipping CloudFormation and Terraform plus a working baseline policy | Which **attachment types** it creates, plus multi-Account and prefix list association |
+| [`policy/`](./policy/) | **What a network policy can express**: capabilities, best practices, constraints, and composable snippets | The policy document's own top-level areas |
+| [`SKILLS.md`](./SKILLS.md) | **Agent knowledge and workflow**: how to translate requirements into a complete policy and pick the infrastructure to test it | Knowledge first, then the generation procedure |
 
-### `infra/` — deployable infrastructure
+Your end-to-end architecture is the combination: build the policy that expresses your requirements, then deploy it on the `infra/` pattern whose attachment types match what you need to connect.
 
-Each pattern is defined by **which attachment types it creates**, and ships a working
-baseline policy so it deploys and forwards traffic out of the box.
+## Generating a policy from your requirements
 
-| Pattern | Adds | Attachment types | IaC |
-|---------|------|------------------|-----|
-| [1. Basic](./infra/1-basic/) | Spoke VPCs across two Regions | `vpc` | Terraform, CloudFormation |
-| [2. Inspection](./infra/2-inspection/) | Inspection VPCs with AWS Network Firewall | `vpc` (spoke + inspection) | Terraform, CloudFormation |
-| [3. Transit Gateway](./infra/3-transit_gateway/) | A Transit Gateway per Region, peered with Cloud WAN | `vpc`, `transit-gateway-route-table` | Terraform, CloudFormation |
-| [4. Hybrid](./infra/4-hybrid/) | Site-to-Site VPN, Connect, Direct Connect gateway — each optional | `vpc`, `site-to-site-vpn`, `connect`, `direct-connect-gateway` | Terraform, CloudFormation<br/>(hybrid attachments and prefix lists are Terraform-only) |
-| [5. Multi-account](./infra/5-multi_account/) | Global network, core network, AWS RAM share — **no workloads** | none (spoke accounts create them) | Terraform, CloudFormation |
+The policy is where your design lives, and [`SKILLS.md`](./SKILLS.md) exists so an AI agent can build it with you. It is an instruction set, not a code generator: given your requirements, an agent that has it in context can gather missing inputs, map intent to Cloud WAN constructs, assemble the document in dependency order, check it against the constraint checklist, and recommend the `infra/` pattern to test it on.
 
-### `policy/` — what you can express
+The skill does not work alone — these blueprints are its knowledge base. The [`policy/`](./policy/) pages give the agent each capability's behavior, constraints, and reviewed snippets to compose from, and the [`infra/`](./infra/) patterns give it tested infrastructure to recommend — so its answers are grounded in this repository's reviewed content and the [AWS Cloud WAN documentation](https://docs.aws.amazon.com/network-manager/latest/cloudwan/what-is-cloudwan.html) rather than the agent's general knowledge alone. That grounding also keeps the guidance current: as capability pages and patterns are added, the agent picks them up by reading the repository.
 
-Organised to mirror the policy document's own top-level arrays, so each page maps to a part
-of the JSON you write.
+**1. Give the agent the skill.** Attach [`SKILLS.md`](./SKILLS.md) to your agent's context. The skill points at this repository's public pages, so an agent that can browse fetches the [`policy/`](./policy/) pages and [`infra/`](./infra/) patterns it references on its own — no clone needed. Clone the repository when the agent cannot browse, or when you want it to inspect or deploy the infrastructure code locally. Ask it to follow the [Building a policy](./SKILLS.md#building-a-policy) procedure rather than generating isolated JSON fragments.
 
-| Page | Produces |
-|------|----------|
-| [Building a policy](./policy/policy_generator.md) | The authoring workflow: intake, assembly order, constraint checklist |
-| [1. Core network configuration](./policy/1-core_network_configuration.md) | `core-network-configuration` |
-| [2. Segments](./policy/2-segments.md) | `segments` |
-| [3. Attachment policies](./policy/3-attachment_policies.md) | `attachment-policies` |
-| [4. Segment sharing](./policy/4-segment_sharing.md) | `segment-actions` (`share`) |
-| [5. Service insertion](./policy/5-service_insertion.md) | `network-function-groups`, `segment-actions` (`send-to`, `send-via`) |
-| [6. Routing policies](./policy/6-routing_policies.md) | `routing-policies`, `attachment-routing-policy-rules` |
+**2. Describe your requirements.** The more explicit you are, the fewer assumptions the agent makes. A starting prompt:
 
-Then point any pattern at the policy you built:
+```text
+Use the AWS Cloud WAN blueprint instructions in SKILLS.md to design a complete
+network policy and recommend an infrastructure pattern for testing it.
 
-```bash
-cd infra/2-inspection/terraform
-terraform apply -var policy_document=../../../my-policy.json
+Requirements:
+- Core network edge Regions:
+- Routing domains or application environments:
+- Required and prohibited communication between routing domains:
+- Required communication within each routing domain:
+- Attachment types, owning accounts, and identifying tags:
+- Internet egress or east-west inspection requirements:
+- Static route, route-filtering, or path-preference requirements:
+- Multi-account sharing requirements:
+- Preferred IaC format: Terraform, CloudFormation, or both:
+
+Ask me for any information you need to avoid unsafe assumptions. Return the
+complete policy document, the selected infra/ pattern and why it is compatible,
+any staged deployment steps, your assumptions, and a validation plan.
 ```
 
-[`blueprint.yaml`](./blueprint.yaml) is the machine-readable catalog and the source of
-truth for what exists. [`V2.md`](./V2.md) explains why the repository is shaped this way.
+**3. Review the result.** The agent should return a complete policy — every referenced segment, network function group, and route-control object defined; attachment tags matching the selected infrastructure; and Region, prefix-list, and staged-policy prerequisites made explicit.
 
-### Moved from v1
+**4. Validate the policy against Cloud WAN console or APIs, not just locally.** Create a policy version and review the change set Cloud WAN generates before executing it — that is the authoritative, state-aware validation. See [Validating a policy](./policy/README.md#validating-a-policy).
 
-The previous layout had one directory per use case under `patterns/`. Those use cases are
-all still here — as policy guidance and snippets rather than as directories:
+**5. Deploy and test.** Point the recommended `infra/` pattern at the generated policy (see [Deploying a policy of your own](./infra/README.md#deploying-a-policy-of-your-own)) and verify the resulting routes and paths, not just attachment status.
 
-| v1 path | Now |
-|---------|-----|
-| `patterns/1-simple_architecture` | [`infra/1-basic`](./infra/1-basic/) |
-| `patterns/2-multi_account` | [`infra/5-multi_account`](./infra/5-multi_account/) |
-| `patterns/3-traffic_inspection/1-centralized_outbound` | [`infra/2-inspection`](./infra/2-inspection/) + [`send-to`](./policy/5-service_insertion.md#send-to--egress-inspection-north-south) |
-| `patterns/3-traffic_inspection/2-…region_without_inspection` | [`policy/5-service_insertion.md`](./policy/5-service_insertion.md#a-region-with-no-local-inspection-vpc) — edge overrides |
-| `patterns/3-traffic_inspection/3-east_west_dualhop` | [`infra/2-inspection`](./infra/2-inspection/) + [`dual-hop`](./policy/5-service_insertion.md#dual-hop-versus-single-hop) |
-| `patterns/3-traffic_inspection/4-east_west_singlehop` | [`policy/5-service_insertion.md`](./policy/5-service_insertion.md#the-inspection-matrix) — the inspection matrix |
-| `patterns/3-traffic_inspection/5-…tgw…dualhop` | [`infra/3-transit_gateway`](./infra/3-transit_gateway/) + [adding inspection](./infra/README.md), a documented local change |
-| `patterns/3-traffic_inspection/6-…tgw…singlehop` | [`infra/3-transit_gateway`](./infra/3-transit_gateway/) + [adding inspection](./infra/README.md), a documented local change |
-| `patterns/4-routing_policies/1-filtering_vpc_secondary_cidr_blocks` | [`policy/6-routing_policies.md`](./policy/6-routing_policies.md#dropping-a-specific-prefix) |
-| `patterns/4-routing_policies/2-filtering_ipv4_ipv6_only_segments` | [`policy/6-routing_policies.md`](./policy/6-routing_policies.md#protocol-specific-segments) |
-| `patterns/4-routing_policies/3-inspection_after_filtering` | [`policy/examples/filter_then_inspect.json`](./policy/examples/filter_then_inspect.json) |
-| `patterns/4-routing_policies/4-filtering_by_bgp_community` | [`policy/6-routing_policies.md`](./policy/6-routing_policies.md#bgp-communities) |
-| `patterns/4-routing_policies/5-influencing_hybrid_path_between_cnes` | [`policy/6-routing_policies.md`](./policy/6-routing_policies.md#preferring-one-regions-hybrid-edge) |
-| `patterns/4-routing_policies/6-influencing_dxgw_hybrid_path` | [`policy/6-routing_policies.md`](./policy/6-routing_policies.md#preferring-the-geographically-aligned-direct-connect-gateway) |
-| `patterns/4-routing_policies/7-summarization` | [`policy/6-routing_policies.md`](./policy/6-routing_policies.md#route-summarization) + [`infra/4-hybrid`](./infra/4-hybrid/) prefix lists |
-| `patterns/4-routing_policies/8-filtering_peered_tgw` | [`policy/6-routing_policies.md`](./policy/6-routing_policies.md#route-filtering) + [`infra/3-transit_gateway`](./infra/3-transit_gateway/) |
+If an agent-generated policy does not match the requirements you gave it, please [report it with the unexpected policy output issue template](https://github.com/aws-samples/aws-cloud-wan-blueprints/issues/new?template=unexpected_policy_output.md) so the skill can be improved.
 
 ## Infrastructure as Code Considerations
 
-AWS Cloud WAN Blueprints do not intend to teach users the recommended practices for Infrastructure as Code (IaC) tools nor does it offer guidance on how users should structure their IaC projects. The patterns provided are intended to show users how they can achieve a defined architecture or configuration in a way that they can quickly and easily get up and running to start interacting with that pattern. Therefore, there are a few considerations users should be aware of when using Cloud WAN Blueprints:
+AWS Cloud WAN Blueprints do not intend to teach users the recommended practices for Infrastructure as Code (IaC) tools nor does it offer guidance on how users should structure their IaC projects. The patterns provided are intended to show users how they can achieve a defined architecture or configuration in a way that they can quickly and easily get up and running to start interacting with that pattern. Therefore, there are a few considerations users should be aware of when using the blueprints:
 
 1. We recognize that most users will already have existing VPCs in separate IaC projects or stacks. However, the patterns provided come complete with VPCs to ensure stable, deployable examples that have been tested and validated.
 
-2. Patterns are not intended to be consumed in-place in the same manner that one would consume a reusable module. Therefore, we do not provide extensive parameters and outputs to expose various levels of configuration for the examples. Users can modify the pattern locally after cloning to suit their requirements.
+2. Patterns are not intended to be consumed in-place in the same manner that one would consume a reusable module. Therefore, we do not provide extensive parameters and outputs to expose various levels of configuration for the examples. The patterns use local variables (Terraform) or parameters (CloudFormation) with sensible defaults; if you wish to deploy into different AWS Regions or with other changes, modify the pattern locally after cloning before deploying.
 
-3. The patterns use local variables (Terraform) or parameters (CloudFormation) with sensible defaults. If you wish to deploy patterns into different regions or with other changes, modify these values before deploying.
+3. The network policy is deliberately decoupled from the infrastructure. Each pattern reads its policy from a separate document (`baseline.json`) rather than hardcoding it, and the Terraform implementations accept your own file via the `policy_document` variable — because the policy is where your design lives and changes far more often than the infrastructure underneath it. Keep that separation in your own IaC: manage the policy as its own artifact with its own review and release cycle.
 
-4. For production deployments, we recommend separating your infrastructure into multiple projects or stacks (e.g., network infrastructure, workload VPCs, inspection resources) to follow IaC best practices and enable independent lifecycle management.
+4. For production deployments, we recommend separating your infrastructure into multiple projects or stacks (e.g., the core network and its policy, workload VPCs, inspection resources) to follow IaC best practices and enable independent lifecycle management.
 
 ## AWS Cloud WAN Fundamentals
 
-[AWS Cloud WAN](https://docs.aws.amazon.com/network-manager/latest/cloudwan/what-is-cloudwan.html) is a managed, intent-driven service for building and managing global networks across [AWS Regions](https://aws.amazon.com/about-aws/global-infrastructure/regions_az/) and on-premises environments.
+[AWS Cloud WAN](https://docs.aws.amazon.com/network-manager/latest/cloudwan/what-is-cloudwan.html) is a managed, intent-driven service for building and managing global networks across [AWS Regions](https://aws.amazon.com/about-aws/global-infrastructure/regions_az/) and on-premises environments. You describe the network you want in a declarative **network policy** — a versioned JSON document — and Cloud WAN builds and maintains it.
 
-### Key Advantages
+These are the constructs the blueprints compose — deliberately just enough vocabulary to navigate this repository. The behaviour, best practices, and caveats of each live in the linked `policy/` pages:
 
-| Capability | Description |
-|------------|-------------|
-| **Automated Dynamic Routing** | Cross-region e-BGP routing |
-| **Centralized Management** | Policy-driven configuration |
-| **Network Segmentation** | Global segments for traffic isolation and routing domains |
-| **Advanced Routing** | Fine-grained control with routing policies, filtering, and BGP manipulation |
+| Concept | What it is |
+|---------|------------|
+| **Core network & edges (CNEs)** | The core network is the global network your policy configures. A CNE is its regional hub, deployed in each Region the policy declares, automatically peered in a full mesh with e-BGP. See [core network configuration](./policy/1-core_network_version_configuration.md). |
+| **Segments** | Global routing domains (similar to VRFs, or global Transit Gateway route tables), typically split by environment, business unit, or geography. See [segments and network function groups](./policy/2-segments-and-nfg.md). |
+| **Attachments** | The connection between a network resource and a CNE: VPC, Site-to-Site VPN, Direct Connect gateway, Connect, or Transit Gateway route table. Each attachment associates with exactly one segment or network function group. |
+| **Attachment policies** | Rules that decide that association, matching on tags, attachment type, account, or Region. See [attachment policies](./policy/3-attachment_policies.md). |
+| **Segment sharing** | Explicit, non-transitive route exchange between segments. See [segment sharing](./policy/4-segment_sharing.md). |
+| **Service insertion** | Sends traffic through inspection: `send-to` for egress (north-south), `send-via` for east-west, using network function groups. See [service insertion](./policy/5-service_insertion.md). |
+| **Routing policies** | Fine-grained route filtering, summarization, and path preference for advanced scenarios. See [routing policies](./policy/7-routing_policies.md) and [attachment routing-policy rules](./policy/9-attachment_routing_policy_rules.md). |
 
----
-
-### Control Plane & Network Policy
-
-| Aspect | Details |
-|--------|---------|
-| **Management Console** | AWS Network Manager |
-| **Home Region** | Oregon (us-west-2) - [Learn more](https://docs.aws.amazon.com/network-manager/latest/cloudwan/what-is-cloudwan.html#cloudwan-home-region) |
-| **Policy Format** | Declarative JSON document |
-| **Policy Defines** | Segments, routing behavior, attachment mappings, access control |
-
-The policy-driven approach automates network configuration while ensuring scalability and consistency across AWS Regions.
-
----
-
-### Core Network Edge (CNE)
-
-| Aspect | Details |
-|--------|---------|
-| **Function** | Regional router (similar to Transit Gateway) |
-| **Availability** | High-available and resilient |
-| **Deployment** | One per AWS Region where Cloud WAN operates |
-| **Peering** | Automatic full-mesh between all CNEs |
-| **Routing Protocol** | e-BGP for dynamic route exchange |
-
----
-
-### Segments
-
-Global route table (similar to Transit Gateway route table or VRF domain)
-
-| Characteristic | Description |
-|----------------|-------------|
-| **Availability** | Present in every Region with a CNE |
-| **Regional Scope** | Can be limited to specific Regions |
-| **Attachment Requirement** | Only possible in Regions where segment exists |
-| **Default Behavior** | Attachments auto-propagate prefixes; intra-segment traffic allowed |
-| **Isolation** | Supports isolated and non-isolated attachments |
-| **Common Segmentation Patterns** | By environment (dev, test, prod), Business Unit (Org A, Org B, Org C), or Geography (AMER, EMEA, APAC) |
-
----
-
-### Routing Action: Segment Sharing
-
-Exchange routes between segments (1:1 or 1:many) without inspection.
-
-> **Note**: Non-transitive - requires explicit share action between segments.
-
-### Routing Action: Service Insertion
-
-Define inspection for intra-segment, inter-segment, and egress traffic.
-
-| Component | Description |
-|-----------|-------------|
-| **Network Function Groups (NFGs)** | Container for inspection VPC attachments |
-| **Scope** | Global construct, supports cross-region inspection |
-| **Multiple NFGs** | Supported for firewall grouping |
-
-Service Insertion Actions:
-
-| Action | Use Case | Traffic Flow |
-|--------|----------|--------------|
-| `send-via` | East-west inspection | Intra-segment or inter-segment traffic |
-| `send-to` | Egress inspection | North-south traffic (internet-bound) |
-
-### Routing Action: Routing Policies
-
-Fine-grained routing controls for advanced scenarios.
-
-| Capability | Description | Supported Attachments |
-|------------|-------------|----------------------|
-| **Route Filtering** | Drop routes based on prefixes, prefix lists, or BGP communities | All attachment types |
-| **Route Summarization** | Aggregate routes outbound | BGP-capable attachments |
-| **Path Preferences** | Influence paths via BGP attributes (Local Pref, AS-PATH, MED) | BGP-capable attachments |
-| **BGP Communities** | Transitively pass, match, and act on communities | Site-to-Site VPN, Connect |
-
-> **BGP-capable attachments**: Site-to-Site VPN, Direct Connect, Connect, Transit Gateway peering, CNE-to-CNE
-
-[See AWS documentation for considerations](https://docs.aws.amazon.com/network-manager/latest/cloudwan/cloudwan-routing-policies.html#cloudwan-routing-policies-considerations)
-
----
-
-### Attachments
-
-Connection between network resource and Core Network Edge (CNE)
-
-| Attachment Type | Description | Notes |
-|-----------------|-------------|-------|
-| **VPC** | Connect VPC to Cloud WAN | Most common attachment type |
-| **Site-to-Site VPN** | IPsec tunnel to on-premises | Supports BGP |
-| **Direct Connect Gateway** | Dedicated connection to on-premises | Supports BGP |
-| **Transit Gateway Route Table** | Integrate existing Transit Gateways | Enables migration path |
-| **Connect** | SD-WAN integration (GRE or tunnel-less) | Requires underlay VPC attachment |
-
-> **Important**: Each attachment can only be associated with one segment.
-
----
-
-### Attachment Policies
-
-Rules that govern how attachments are associated with segments or Network Function Groups (NFGs). Matching Attributes:
-
-| Attribute Type | Description |
-|----------------|-------------|
-| **Tags** | Key-value pairs on attachments |
-| **Attachment Type** | VPC, VPN, Direct Connect, etc. |
-| **AWS Account ID** | Source account of attachment |
-| **AWS Region** | Region where attachment exists |
-
-> **Note**: Pending attachments cannot access the core network until approved.
+Cloud WAN's management plane lives in its home Region (`us-west-2`), and policy changes are staged as versioned change sets you review before executing. This table is not exhaustive — [`policy/README.md`](./policy/README.md) maps everything a policy can express, including static routes and edge-location associations — and for the authoritative detail of each construct, see the [AWS Cloud WAN documentation](https://docs.aws.amazon.com/network-manager/latest/cloudwan/what-is-cloudwan.html).
 
 ## Prerequisites
 
@@ -245,50 +122,35 @@ Before using these blueprints, you should have:
 - **Infrastructure as Code**: Experience with AWS CloudFormation or Terraform.
 - **AWS Account**: An AWS account with appropriate IAM permissions to create networking resources.
 
+> If you deploy infrastructure from these blueprints to build a PoC, you are creating real, billable AWS resources. Use a non-production account, check the **Cost** section of the [`infra/`](./infra/) pattern you deploy to see what you will be billed for, and run its cleanup steps when you are finished.
+
 ## Support & Feedback
 
-AWS Cloud WAN Blueprints are maintained by AWS Solution Architects. This is not part of an AWS service and support is provided as best-effort by the Cloud WAN Blueprints community. To provide feedback, please use the [issues templates](https://github.com/aws-samples/aws-cloud-wan-blueprints/issues) provided. If you are interested in contributing to Cloud WAN Blueprints, see the [Contribution guide](CONTRIBUTING.md).
+AWS Cloud WAN Blueprints are maintained by AWS Solution Architects. This is not part of an AWS service and support is provided as best-effort by the Cloud WAN Blueprints community. To provide feedback, please use the issues templates provided in this repository. If you are interested in contributing to Cloud WAN Blueprints, see the [Contribution guide](CONTRIBUTING.md) and the conventions every pattern follows in [`CONVENTIONS.md`](CONVENTIONS.md).
 
 ## FAQ
 
 **Q: I want a use case that is not in `infra/`. Where is it?**
 
-A: Most likely in [`policy/`](./policy/). `infra/` patterns are organised by which
-attachment types they create, not by use case — a use case is a policy document, and the
-same infrastructure serves many of them. Find the capability you need under `policy/`, take
-the snippets, and apply the result to whichever `infra/` pattern has the attachment types
-you need. See [`policy/policy_generator.md`](./policy/policy_generator.md) for the
-authoring workflow.
+A: In [`policy/`](./policy/) — a use case is a policy document, and the same infrastructure serves many of them. Build the policy from the capability pages, then deploy it on the `infra/` pattern with the attachment types you need.
+
+The infrastructure patterns are building blocks, not finished answers: if your policy needs extra resources, adapt the closest pattern — that is expected. An AI agent with [`SKILLS.md`](./SKILLS.md) can help with both: assembling the policy and adapting the infrastructure to it (see [Generating a policy from your requirements](#generating-a-policy-from-your-requirements)).
 
 **Q: Can I use these patterns in production?**
 
 A: These patterns are **not ready** for production environments. They should be customized for your specific requirements. Update variables, CIDR blocks, and configurations before deploying to production. Always test in pre-production environments first.
 
-**Q: What are the bandwidth and MTU limits for Cloud WAN?**
+**Q: Do I need an AI agent to use these blueprints?**
 
-A: Each Core Network Edge (CNE) supports up to 100 Gbps throughput. For detailed quotas and limits, see the [AWS Cloud WAN quotas documentation](https://docs.aws.amazon.com/network-manager/latest/cloudwan/cloudwan-quotas.html).
+A: No. Every `infra/` pattern deploys with its baseline policy as-is, and the `policy/` pages are a reference you can read and apply yourself. The agent workflow in `SKILLS.md` automates assembling a complete policy from requirements, but you can follow the same steps by hand.
 
 **Q: Do I need separate AWS accounts to use these patterns?**
 
-A: No, patterns 1 to 4 deploy in a single AWS account. [`infra/5-multi_account`](./infra/5-multi_account/) demonstrates sharing one core network across accounts with AWS Resource Access Manager, and documents the cross-account limitations that follow.
+A: No, most patterns deploy in a single AWS account. [`infra/5-multi_account`](./infra/5-multi_account/) demonstrates sharing one core network across accounts with AWS Resource Access Manager, and documents the cross-account limitations that follow.
 
 **Q: Which IaC tool should I use?**
 
-A: Both CloudFormation and Terraform are supported for most patterns. Choose based on your organization's preferences and existing tooling. Terraform patterns use the [AWS](https://registry.terraform.io/providers/hashicorp/aws/latest/docs) and [AWSCC](https://registry.terraform.io/providers/hashicorp/awscc/latest/docs) providers, while CloudFormation patterns use native AWS resources.
-
-## Repository documentation
-
-| Document | Audience | Purpose |
-|----------|----------|---------|
-| [`README.md`](./README.md) | Humans | This overview: motivation, pattern catalog, Cloud WAN fundamentals |
-| [`infra/`](./infra/) | Humans | Deployable infrastructure, organised by which attachment types it creates |
-| [`policy/`](./policy/) | Humans + agents | What a Cloud WAN network policy can express, and how to build one |
-| [`blueprint.yaml`](./blueprint.yaml) | Tooling | Machine-readable catalog — the source of truth for what exists |
-| [`SKILLS.md`](./SKILLS.md) | AI agents | Cloud WAN service knowledge: building blocks, the policy model, constraints, and a design workflow. Drop it into your own agent's context |
-| [`CONVENTIONS.md`](./CONVENTIONS.md) | Contributors | The contract every pattern follows: naming, layout, version pins, license headers, parity policy, CI lockstep |
-| [`CONTRIBUTING.md`](./CONTRIBUTING.md) | Contributors | How to contribute, and how to run the same static checks locally that CI runs |
-| [`V2.md`](./V2.md) | Maintainers | The v2 design: why the pattern-per-use-case layout was replaced by separated `infra/` and `policy/` trees, and what was decided against |
-| [`tools/`](./tools/) | Contributors | Policy validation and the CloudFormation policy generator |
+A: Both CloudFormation and Terraform are supported for every infrastructure pattern. Choose based on your organization's preferences and existing tooling. Terraform patterns use the [AWS](https://registry.terraform.io/providers/hashicorp/aws/latest/docs) and [AWSCC](https://registry.terraform.io/providers/hashicorp/awscc/latest/docs) providers, while CloudFormation patterns use native AWS resources.
 
 ## Security
 

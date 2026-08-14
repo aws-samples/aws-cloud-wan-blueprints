@@ -4,8 +4,7 @@ In this pattern, we want to show how AWS Cloud WAN integrates with AWS Site-to-S
 
 > **Connect (SD-WAN) attachments are not covered yet.** This pattern ships Site-to-Site VPN and Direct Connect gateway attachments. Support for Connect attachments is on the way.
 
-<!-- DIAGRAM PLACEHOLDER -->
-> _Architecture diagram to be added._
+![Hybrid architecture](../../images/4-hybrid.png)
 
 ## Implementations
 

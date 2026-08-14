@@ -3,9 +3,6 @@
 
 In this pattern, we want to show how a managed prefix list is associated with a core network so a routing policy can match on its alias, and how to deploy that without hitting the circular dependency between the two.
 
-<!-- DIAGRAM PLACEHOLDER -->
-> \_Architecture diagram to be added.\_
-
 See [the pattern README](../README.md) for what this builds, why two policy documents are needed, what each one configures, and how to verify it.
 
 ## Prerequisites
