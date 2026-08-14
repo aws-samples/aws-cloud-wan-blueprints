@@ -1,0 +1,54 @@
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: MIT-0
+#
+# ============================================================================
+# The managed prefix list and its association with the core network.
+# ============================================================================
+AWSTemplateFormatVersion: 2010-09-09
+Description: AWS Cloud WAN Blueprints - Prefix list association (prefix list & association, phase 2)
+
+Parameters:
+  Identifier:
+    Type: String
+    Default: prefix-list
+    Description: Project identifier, used as a suffix when naming resources.
+  CoreNetworkId:
+    Type: String
+    Description: Core network ID, from the core network stack.
+  PrefixListAlias:
+    Type: String
+    Default: routesfiltered
+    Description: Alias the prefix list is associated under. Must match the prefix-in-prefix-list value in the phase 3 policy.
+
+Resources:
+  # A plain VPC managed prefix list. This stack is deployed in Cloud WAN's home Region, which is where a prefix list associated with a core network has to live.
+  PrefixList:
+    Type: AWS::EC2::PrefixList
+    Properties:
+      PrefixListName: !Sub 'prefix-list-${Identifier}'
+      AddressFamily: IPv4
+      MaxEntries: 2
+      Entries:
+        - Cidr: 10.100.0.0/16
+          Description: !Sub 'Filtered by the ${PrefixListAlias} routing policy'
+        - Cidr: 192.168.0.0/16
+          Description: !Sub 'Filtered by the ${PrefixListAlias} routing policy'
+      Tags:
+        - Key: Name
+          Value: !Sub 'prefix-list-${Identifier}'
+
+  # The association gives the prefix list an ALIAS on this core network
+  PrefixListAssociation:
+    Type: AWS::NetworkManager::CoreNetworkPrefixListAssociation
+    Properties:
+      CoreNetworkId: !Ref CoreNetworkId
+      PrefixListArn: !GetAtt PrefixList.Arn
+      PrefixListAlias: !Ref PrefixListAlias
+
+Outputs:
+  PrefixListArn:
+    Description: Managed prefix list ARN.
+    Value: !GetAtt PrefixList.Arn
+  PrefixListAlias:
+    Description: Alias a routing policy matches on with prefix-in-prefix-list.
+    Value: !Ref PrefixListAlias

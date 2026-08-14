@@ -1,0 +1,118 @@
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: MIT-0
+#
+# ============================================================================
+# Hybrid attachments, deployed ONCE in us-east-1.
+#
+# Both sub-types are optional and off by default. Leave a parameter empty to skip it:
+#   CustomerGatewayIp        - empty skips the Site-to-Site VPN
+#   DirectConnectGatewayAsn  - empty skips the Direct Connect gateway
+#
+# The gateways deploy with no circuit behind them. Creating the Transit VIFs and
+# associating them with the Direct Connect gateway are out of scope - see README.md.
+# ============================================================================
+AWSTemplateFormatVersion: 2010-09-09
+Description: AWS Cloud WAN Blueprints - Hybrid (Site-to-Site VPN & Direct Connect gateway)
+
+Parameters:
+  Identifier:
+    Type: String
+    Default: hybrid
+    Description: Project identifier, used as a suffix when naming resources.
+  CoreNetworkId:
+    Type: String
+    Description: Core network ID, from the core network stack.
+  CustomerGatewayIp:
+    Type: String
+    Default: ''
+    Description: Public IP address of your on-premises VPN device. Empty to skip the Site-to-Site VPN.
+  CustomerGatewayAsn:
+    Type: Number
+    Default: 65010
+    Description: BGP ASN of your on-premises VPN device. Must not overlap the asn-ranges in the policy document.
+  DirectConnectGatewayAsn:
+    Type: String
+    Default: ''
+    Description: Amazon-side ASN for the Direct Connect gateway. Must not overlap the asn-ranges in the policy document. Empty to skip the Direct Connect gateway.
+  EdgeLocations:
+    Type: CommaDelimitedList
+    Default: us-east-1,eu-west-1
+    Description: Core Network Edges the Direct Connect gateway attaches to. Must match the edge-locations in the policy document.
+
+Conditions:
+  CreateVpn: !Not [!Equals [!Ref CustomerGatewayIp, '']]
+  CreateDxGateway: !Not [!Equals [!Ref DirectConnectGatewayAsn, '']]
+
+Resources:
+  # ---------- HYBRID: SITE-TO-SITE VPN ----------
+  # Customer gateway
+  CustomerGateway:
+    Condition: CreateVpn
+    Type: AWS::EC2::CustomerGateway
+    Properties:
+      BgpAsn: !Ref CustomerGatewayAsn
+      IpAddress: !Ref CustomerGatewayIp
+      Type: ipsec.1
+      Tags:
+        - Key: Name
+          Value: !Sub 'cgw-${Identifier}'
+
+  # VPN connection
+  VpnConnection:
+    Condition: CreateVpn
+    Type: AWS::EC2::VPNConnection
+    Properties:
+      CustomerGatewayId: !Ref CustomerGateway
+      Type: ipsec.1
+      Tags:
+        - Key: Name
+          Value: !Sub 'vpn-${Identifier}'
+
+  # AWS Cloud WAN VPN attachment
+  VpnAttachment:
+    Condition: CreateVpn
+    Type: AWS::NetworkManager::SiteToSiteVpnAttachment
+    Properties:
+      CoreNetworkId: !Ref CoreNetworkId
+      VpnConnectionArn: !Sub 'arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:vpn-connection/${VpnConnection}'
+      Tags:
+        - Key: Name
+          Value: !Sub 'vpn-attachment-${Identifier}'
+
+  # ---------- HYBRID: DIRECT CONNECT GATEWAY ----------
+  # Direct Connect gateway
+  DxGateway:
+    Condition: CreateDxGateway
+    Type: AWS::DirectConnect::DirectConnectGateway
+    Properties:
+      DirectConnectGatewayName: !Sub 'dxgw-${Identifier}'
+      AmazonSideAsn: !Ref DirectConnectGatewayAsn
+      Tags:
+        - Key: Name
+          Value: !Sub 'dxgw-${Identifier}'
+
+  # AWS Cloud WAN direct connect gateway attachment
+  DxGatewayAttachment:
+    Condition: CreateDxGateway
+    Type: AWS::NetworkManager::DirectConnectGatewayAttachment
+    Properties:
+      CoreNetworkId: !Ref CoreNetworkId
+      DirectConnectGatewayArn: !Sub 'arn:${AWS::Partition}:directconnect::${AWS::AccountId}:dx-gateway/${DxGateway.DirectConnectGatewayId}'
+      EdgeLocations: !Ref EdgeLocations
+      Tags:
+        - Key: Name
+          Value: !Sub 'dxgw-attachment-${Identifier}'
+
+Outputs:
+  VpnAttachmentId:
+    Condition: CreateVpn
+    Description: Site-to-Site VPN attachment ID.
+    Value: !Ref VpnAttachment
+  DirectConnectGatewayId:
+    Condition: CreateDxGateway
+    Description: Direct Connect gateway ID.
+    Value: !GetAtt DxGateway.DirectConnectGatewayId
+  DxGatewayAttachmentId:
+    Condition: CreateDxGateway
+    Description: Direct Connect gateway attachment ID.
+    Value: !Ref DxGatewayAttachment

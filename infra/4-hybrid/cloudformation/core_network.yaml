@@ -1,0 +1,90 @@
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: MIT-0
+#
+# ============================================================================
+# The PolicyDocument below MUST match ../baseline.json, which is the policy this pattern shares with its Terraform implementation.
+# Change one and you must change the other - CI compares them and fails the build if they diverge.
+#
+# To deploy a policy of your own, copy this template rather than editing it
+# ============================================================================
+AWSTemplateFormatVersion: 2010-09-09
+Description: AWS Cloud WAN Blueprints - Hybrid (global & core network)
+
+Parameters:
+  Identifier:
+    Type: String
+    Default: hybrid
+    Description: Project identifier, used as a suffix when naming resources.
+
+Resources:
+  GlobalNetwork:
+    Type: AWS::NetworkManager::GlobalNetwork
+    Properties:
+      Description: !Sub 'Global Network - ${Identifier}'
+      Tags:
+        - Key: Name
+          Value: !Sub 'global-network-${Identifier}'
+
+  CoreNetwork:
+    Type: AWS::NetworkManager::CoreNetwork
+    Properties:
+      Description: !Sub 'Core Network - ${Identifier}'
+      GlobalNetworkId: !Ref GlobalNetwork
+      Tags:
+        - Key: Name
+          Value: !Sub 'core-network-${Identifier}'
+      PolicyDocument:
+        version: "2025.11"
+        core-network-configuration:
+          vpn-ecmp-support: true
+          dns-support: true
+          asn-ranges:
+            - 64520-64525
+          edge-locations:
+            - location: us-east-1
+              asn: 64520
+            - location: eu-west-1
+              asn: 64521
+        segments:
+          - name: vpcs
+            require-attachment-acceptance: false
+            isolate-attachments: false
+          - name: hybrid
+            require-attachment-acceptance: false
+            isolate-attachments: false
+        attachment-policies:
+          - rule-number: 100
+            condition-logic: or
+            conditions:
+              - type: attachment-type
+                operator: equals
+                value: site-to-site-vpn
+              - type: attachment-type
+                operator: equals
+                value: direct-connect-gateway
+            action:
+              association-method: constant
+              segment: hybrid
+          - rule-number: 200
+            condition-logic: and
+            conditions:
+              - type: attachment-type
+                operator: equals
+                value: vpc
+            action:
+              association-method: constant
+              segment: vpcs
+        segment-actions:
+          - action: share
+            mode: attachment-route
+            segment: vpcs
+            share-with:
+              - hybrid
+
+Outputs:
+  CoreNetworkId:
+    Description: Core Network ID.
+    Value: !GetAtt CoreNetwork.CoreNetworkId
+  CoreNetworkArn:
+    Description: Core Network ARN.
+    Value: !GetAtt CoreNetwork.CoreNetworkArn

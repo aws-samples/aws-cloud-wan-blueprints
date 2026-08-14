@@ -1,0 +1,208 @@
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: MIT-0
+AWSTemplateFormatVersion: 2010-09-09
+Description: AWS Cloud WAN Blueprints - Hybrid (spoke VPC & workloads)
+Transform: 'AWS::LanguageExtensions'
+
+Parameters:
+  CoreNetworkArn:
+    Type: String
+  CoreNetworkId:
+    Type: String
+  LatestAmiId:
+    Type: "AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>"
+    Default: "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64"
+
+Mappings:
+  SpokeVpcCIDR:
+    us-east-1:
+      CIDR: 10.10.0.0/24
+      EndpointSubneta: 10.10.0.0/28
+      EndpointSubnetb: 10.10.0.16/28
+      PrivateSubneta: 10.10.0.32/28
+      PrivateSubnetb: 10.10.0.48/28
+      CWANSubneta: 10.10.0.64/28
+      CWANSubnetb: 10.10.0.80/28
+    eu-west-1:
+      CIDR: 10.0.0.0/24
+      EndpointSubneta: 10.0.0.0/28
+      EndpointSubnetb: 10.0.0.16/28
+      PrivateSubneta: 10.0.0.32/28
+      PrivateSubnetb: 10.0.0.48/28
+      CWANSubneta: 10.0.0.64/28
+      CWANSubnetb: 10.0.0.80/28
+
+Resources:
+  # ---------- SPOKE VPC ----------
+  SpokeVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !FindInMap [SpokeVpcCIDR, !Ref 'AWS::Region', CIDR]
+      Tags:
+        - Key: Name
+          Value: !Join
+            - '-'
+            - - spoke-vpc
+              - !Ref AWS::StackName
+              - !Ref AWS::Region
+
+  # For::Each iteration: per subnet type (Endpoint, Private, CWAN) and AZ (2 AZs)
+  # Resources to create: 6 subnets, 6 route tables, 6 route table associations - obtaining AZ affinity
+  'Fn::ForEach::SpokeSubnetTypes':
+    - SubnetType
+    - [Endpoint, Private, CWAN]
+    - '${SubnetType}':
+      'Fn::ForEach::AZ':
+        - AvailabilityZone
+        - [a, b]
+          # Subnets
+        - 'Spoke${SubnetType}Subnet${AvailabilityZone}':
+            Type: AWS::EC2::Subnet
+            Properties:
+              VpcId: !Ref SpokeVPC
+              AvailabilityZone: !Sub ${AWS::Region}${AvailabilityZone}
+              CidrBlock: !FindInMap [SpokeVpcCIDR, !Ref 'AWS::Region', 'Fn::Sub': '${SubnetType}Subnet${AvailabilityZone}']
+              Tags:
+                - Key: Name
+                  Value: !Join
+                    - '-'
+                    - - !Sub spoke-subnet-${SubnetType}-AZ${AvailabilityZone}
+                      - !Ref AWS::StackName
+          # Route Tables
+          'Spoke${SubnetType}RouteTable${AvailabilityZone}':
+            Type: AWS::EC2::RouteTable
+            Properties:
+              VpcId: !Ref SpokeVPC
+              Tags:
+                - Key: Name
+                  Value: !Join
+                    - '-'
+                    - - !Sub spoke-rt-${SubnetType}-AZ${AvailabilityZone}
+                      - !Ref AWS::StackName
+          # Route Table associations
+          'Spoke${SubnetType}RouteTableAssociation${AvailabilityZone}':
+            Type: AWS::EC2::SubnetRouteTableAssociation
+            Properties:
+              RouteTableId: !Ref
+                'Fn::Sub': 'Spoke${SubnetType}RouteTable${AvailabilityZone}'
+              SubnetId: !Ref
+                'Fn::Sub': 'Spoke${SubnetType}Subnet${AvailabilityZone}'
+
+  # For::Each iteration: per Availability Zone
+  # VPC routes to 0.0.0.0/0 (via CWAN)
+  'Fn::ForEach::SpokeVPCRoutes':
+    - AvailabilityZone
+    - [a, b]
+    - 'SpokeDefaultToCWANRoute${AvailabilityZone}':
+        DependsOn:
+          - SpokeCWANAttachment
+        Type: AWS::EC2::Route
+        Properties:
+          RouteTableId: !Ref
+            'Fn::Sub': 'SpokePrivateRouteTable${AvailabilityZone}'
+          DestinationCidrBlock: '0.0.0.0/0'
+          CoreNetworkArn: !Ref CoreNetworkArn
+
+  # AWS Cloud WAN attachment
+  SpokeCWANAttachment:
+    Type: AWS::NetworkManager::VpcAttachment
+    Properties:
+      CoreNetworkId: !Ref CoreNetworkId
+      SubnetArns:
+        - !Sub 'arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:subnet/${SpokeCWANSubneta}'
+        - !Sub 'arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:subnet/${SpokeCWANSubnetb}'
+      VpcArn: !Sub 'arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:vpc/${SpokeVPC}'
+      Tags:
+        - Key: Name
+          Value: !Join
+            - '-'
+            - - spoke-attachment
+              - !Ref AWS::StackName
+              - !Ref AWS::Region
+
+  # Security Groups (Instances and EC2 Instance Connect endpoint)
+  VPCSpokeInstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Spoke VPC - Instance Security Group
+      VpcId: !Ref SpokeVPC
+
+  VPCSpokeInstanceSecurityGroupIngressICMP:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref VPCSpokeInstanceSecurityGroup
+      Description: Allowing ICMP traffic
+      IpProtocol: icmp
+      FromPort: -1
+      ToPort: -1
+      CidrIp: 10.0.0.0/8
+
+  VPCSpokeInstanceSecurityGroupIngressEIC:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref VPCSpokeInstanceSecurityGroup
+      Description: Allowing EIC connection
+      IpProtocol: tcp
+      FromPort: 22
+      ToPort: 22
+      SourceSecurityGroupId: !Ref VPCSpokeEndpointSecurityGroup
+
+  VPCSpokeInstanceSecurityGroupEgress:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties:
+      GroupId: !Ref VPCSpokeInstanceSecurityGroup
+      Description: Allowing egress traffic
+      IpProtocol: -1
+      CidrIp: 0.0.0.0/0
+
+  VPCSpokeEndpointSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Spoke VPC - Endpoints Security Group
+      VpcId: !Ref SpokeVPC
+
+  VPCSpokeEndpointSecurityGroupEgressEIC:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties:
+      GroupId: !Ref VPCSpokeEndpointSecurityGroup
+      Description: Allowing EIC connection
+      IpProtocol: tcp
+      FromPort: 22
+      ToPort: 22
+      DestinationSecurityGroupId: !Ref VPCSpokeInstanceSecurityGroup
+
+  # For::Each iteration: per AZ (2 AZs)
+  # EC2 Instances
+  'Fn::ForEach::SpokeInstances':
+    - AvailabilityZone
+    - [a, b]
+    - 'SpokeInstance${AvailabilityZone}':
+        Type: AWS::EC2::Instance
+        Properties:
+          InstanceType: t2.micro
+          SecurityGroupIds:
+            - !Ref VPCSpokeInstanceSecurityGroup
+          SubnetId: !Ref
+            'Fn::Sub': 'SpokePrivateSubnet${AvailabilityZone}'
+          ImageId: !Ref LatestAmiId
+          Tags:
+            - Key: Name
+              Value: !Join
+                - '-'
+                - - !Sub spoke-instance-${AvailabilityZone}
+                  - !Ref AWS::StackName
+
+  # EC2 Instance Connect Endpoint
+  SpokeEICEndpoint:
+    Type: AWS::EC2::InstanceConnectEndpoint
+    Properties:
+      PreserveClientIp: false
+      SecurityGroupIds:
+        - !Ref VPCSpokeEndpointSecurityGroup
+      SubnetId: !Ref SpokeEndpointSubneta
+      Tags:
+        - Key: Name
+          Value: !Join
+            - '-'
+            - - spoke-eic
+              - !Ref AWS::StackName
