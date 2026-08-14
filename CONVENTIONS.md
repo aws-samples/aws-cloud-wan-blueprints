@@ -56,32 +56,37 @@ infra/<pattern>/                 # a pattern = which ATTACHMENT TYPES exist
 ├── terraform/                   # main.tf, variables.tf, outputs.tf, providers.tf,
 │                                #   .header.md, README.md (generated)
 ├── cloudformation/              # templates, Makefile, README.md
-│                                #   core_network.yaml is GENERATED - see section 6
-├── baseline.json                # the pattern's working policy (single source of truth)
+│                                #   core_network*.yaml is GENERATED - see section 6
+├── baseline.json                # the normal working policy
+├── baseline_<stage>.json        # optional staged policy - see section 6
 └── README.md                    # what it deploys, tags applied, how to test
 
-infra/tf_modules/                # shared Terraform modules: compute, firewall_policy,
-                                 #   transit_gateway
+infra/tf_modules/                # shared Terraform modules: compute, firewall_policy
 
 policy/                          # flat, one document per policy-document area
-├── README.md                    # index, snippet vs example, testability matrix
-├── policy_generator.md          # the authoring workflow
-├── 1..6-*.md                    # the capability documents
-└── examples/*.json              # complete, validated, deployable policies
+├── README.md                    # index, composition guidance, validation workflow
+└── 1..9-*.md                    # the capability documents
 
-tools/                           # validate_policy.py, sync_cfn_policy.py
+.github/scripts/                 # check_policies.py - CI pre-merge policy checks
 images/                          # architecture diagrams + editable sources
 ```
 
 Rules:
 
 - An `infra/` pattern is defined **only** by which attachment types it creates. It must not encode a use case. If two candidate patterns would differ only in policy, they are one pattern and two policies.
-- `baseline.json` is a **working** policy, not a placeholder: deploying a pattern unmodified must produce a network that forwards traffic.
-- Every pattern applies the same [attachment tagging contract](infra/README.md#attachment-tags). Changing it is a local edit by the user, not a per-pattern variation.
+- `baseline.json` is a **working** policy, not a placeholder: deploying a pattern unmodified must produce a network that forwards traffic. A pattern may add suffix-paired `baseline_<stage>.json` and `cloudformation/core_network_<stage>.yaml` documents only when a service dependency requires policies to be applied in stages; see [Network-policy authoring](#6-network-policy-authoring).
+- A pattern binds attachments either by tag or by attachment type, and [`infra/README.md`](infra/README.md#how-attachments-are-associated) records which one each pattern uses. Tag keys are `domain` for segment association and `inspection` for the inspection network function group; do not invent a third. Changing what a pattern applies is a local edit by the user.
 - Shared Terraform modules live **only** in `infra/tf_modules/`. The name is deliberately Terraform-specific; CloudFormation templates are self-contained.
-- Every pattern deploys exactly **two Regions** (`us-east-1`, `eu-west-1`). See [`infra/README.md`](infra/README.md#two-regions) for why, and what it costs. A pattern may declare a provider for a non-edge Region — `4-hybrid` needs `us-west-2` for managed prefix lists — keyed `home` in `aws_regions` so tooling excludes it from edge-location checks.
+- Every baseline declares exactly **two Core Network Edge locations**, `us-east-1` and `eu-west-1`, so the examples expose cross-Region behavior. The resources a pattern manages do not necessarily live in both edge Regions: [`infra/README.md`](infra/README.md#regions) records their actual locations and explains the exceptions for `5-multi_account` and `6-prefix_list_association`.
 - The `terraform/README.md` is **generated** from `.header.md` plus the module's inputs and outputs. Edit `.header.md`, then regenerate — never edit the README by hand. Config: `.config/.terraform-docs.yaml`.
-- `policy/` is flat. One markdown file per area of the policy document; the only subdirectory is `examples/`.
+- `policy/` is flat: one markdown file per area of the policy document, no subdirectories.
+
+### Catalog and agent-index synchronization
+
+The repository exposes the same structure to human readers and AI agents. Keep those indexes synchronized in the same change:
+
+- When a pattern is added, removed, or renamed, update the catalogs in [`README.md`](README.md), [`infra/README.md`](infra/README.md), and [Choosing infrastructure](SKILLS.md#5-choosing-infrastructure).
+- When a policy capability page is added, removed, or renamed, update [`README.md`](README.md), [`policy/README.md`](policy/README.md), the [`SKILLS.md`](SKILLS.md#policy--the-capability-pages) capability table, the [assembly order](SKILLS.md#2-assembly-order), and any affected constraint-checklist entries.
 
 ### Documentation tiers
 
@@ -145,7 +150,7 @@ Every IaC source file carries the `MIT-0` copyright header at the very top.
 
 For any other comment-supporting source file (Makefile, shell, Python), use the equivalent comment syntax with the same two lines.
 
-**Markdown does not carry the header.** `LICENSE` at the repository root covers the repository, and an SPDX header exists for source files that may be copied out of it in isolation — which is not what documentation is for. Every `*.md` in this repository starts with its `#` heading.
+**Markdown does not carry the header.** `LICENSE` at the repository root covers the repository, and an SPDX header exists for source files that may be copied out of it in isolation — which is not what documentation is for. Repository documentation outside `.github/ISSUE_TEMPLATE/` starts with its `#` heading; GitHub issue templates begin with the YAML front matter required by GitHub and then use Markdown headings.
 
 ---
 
@@ -159,7 +164,15 @@ These are properties of the service, not of this repository. State them the same
 | Cloud WAN home Region | `us-west-2` |
 | Control-plane console | AWS Network Manager |
 | Managed prefix lists referenced by routing policies | MUST be created in `us-west-2`, regardless of where edge locations are |
-| Core Network Edge (CNE) throughput | up to 100 Gbps per CNE |
+| Throughput | A property of the **attachment**, not of the CNE. You scale a Region by adding or resizing attachments |
+| Core Network Edge (CNE) cost | Charged **per hour** from the moment the policy declares it, attached or not |
+
+**Never quote a number that lives in a quotas or a pricing page.** Limits and prices change, and a figure copied in here goes stale silently — the reader has no way to tell whether they are looking at a current value or one that was true when the page was written. State the **concept** and the **unit of measurement**, then link to the authoritative page:
+
+- Throughput: say that it is per attachment, and per Availability Zone for VPC attachments, and link to [AWS Cloud WAN quotas](https://docs.aws.amazon.com/network-manager/latest/cloudwan/cloudwan-quotas.html). Do not give Gbps figures.
+- Cost: say what the unit is — a CNE is billed **per hour**, data processing **per GB** — and link to [AWS Cloud WAN pricing](https://aws.amazon.com/cloud-wan/pricing/). Do not give rates.
+
+Numbers fixed by the service's own semantics rather than by a quota **are** worth stating, because a policy is invalid without them: the accepted `asn-ranges` bounds, the `/24` and `/64` minimums for inside CIDR blocks, the `/29` from `169.254.0.0/16` for Connect peer BGP addresses, and the `version` identifiers.
 
 The `awscc` provider alias that creates the global network and core network is pointed at a single Region per pattern (the patterns use `us-east-1`); this is the API endpoint used to manage the core network, not a constraint on edge locations.
 
@@ -169,46 +182,43 @@ When a pattern's docs claim a routing behaviour, the **network policy in the doc
 
 ## 6. Network-policy authoring
 
-### v2: one document, generated CloudFormation
+### v2: baseline documents and generated CloudFormation
 
-In the v2 layout each `infra/` pattern's `baseline.json` is the **single source of truth** for its network policy.
+In the normal v2 layout, an `infra/` pattern's `baseline.json` is the **single source of truth** for its network policy. When a service dependency requires more than one policy application, a pattern may add suffix-paired documents such as `baseline_prefix_list.json` and `cloudformation/core_network_prefix_list.yaml`. The unsuffixed pair remains the policy used to create the core network; each suffixed pair represents a later stage and must be documented in the pattern README.
 
-- **Terraform** reads it with `file(var.policy_document)`. The `aws_networkmanager_core_network_policy_document` data source is deliberately **not** used, so the policy is not authored a second time in HCL.
-- **CloudFormation** cannot take a document this size as a stack parameter (parameters cap at 4096 characters), so `cloudformation/core_network.yaml` is **generated** from `baseline.json`:
+- **Terraform** reads each policy document with `file(...)`. The `aws_networkmanager_core_network_policy_document` data source is deliberately **not** used, so a policy is not authored a second time in HCL.
+- **CloudFormation** cannot take a document this size as a stack parameter (parameters cap at 4096 characters), so each `cloudformation/core_network*.yaml` is **generated** from the suffix-paired `baseline*.json`:
 
   ```bash
-  python3 tools/sync_cfn_policy.py infra/<pattern>
+  python3 .github/scripts/check_policies.py
   ```
 
-  Never hand-edit that file. CI fails if it drifts.
+  Never hand-edit generated core-network policy templates. CI fails if a template drifts from its paired JSON document.
 
-Every policy — baselines, `policy/examples/*.json`, and the inline snippets in `policy/*.md` — must pass `tools/validate_policy.py`. A baseline must also pass the contract check against its own pattern:
+Every policy — the `infra/` baselines, and the inline snippets in `policy/*.md` — must pass the pre-merge checks:
 
 ```bash
-python3 tools/validate_policy.py infra/<pattern>/baseline.json --infra infra/<pattern>
+python3 .github/scripts/check_policies.py
 ```
 
-### Snippets versus examples in `policy/`
+### `policy/` ships snippets, not full policies
 
-- A **snippet** is a fragment (one array element, or one array), illustrative and not deployable alone. It lives inline in the markdown. Snippets are the default.
-- An **example** is a complete, valid, deployable policy document in `policy/examples/`.
+A **snippet** is a fragment — one array element, or one array — illustrative and not deployable alone. It lives inline in the markdown, next to the prose that explains it, and it is the *only* form of JSON `policy/` contains.
 
-An example is admissible only if **all four** hold:
+`policy/` deliberately ships **no complete, deployable policy documents** of its own. The only full policies in this repository are the `infra/<pattern>/baseline*.json` files, and those exist to make a pattern deploy a working network or to complete a documented staged deployment, not to demonstrate a capability. Two things follow from that:
 
-1. It cannot be understood from the snippets alone — the value is in the *interaction* between two or more capabilities.
-2. It is deployable end to end against a named infra pattern, so it can be verified rather than merely read.
-3. It produces a routing outcome that is non-obvious, or easy to get wrong when composing the snippets by hand.
-4. It does **not** differ from an existing example only by parameter values (CIDRs, Region names, segment names, community values). Parameterisation is not novelty.
+- A user's real requirement is not one of a fixed set. Composing a use case out of the capabilities on these pages, in the order [`SKILLS.md`](SKILLS.md) lays out, is what scales — a library of example policies does not, because there is always a combination of segments, sharing, service insertion and routing policies that the library does not have and never will.
+- The generator capability in [`SKILLS.md`](SKILLS.md) is what turns a use case into a full document: it is the logic that assembles snippets in the right order, checks the constraints that bite, and hands back a validated policy. **That is where end-to-end policy composition lives** — not in a static file checked into this directory.
 
-Every example must appear in the table in [`policy/README.md`](policy/README.md) with a one-line justification. If you cannot write that sentence, what you have is a snippet. **This is checked in review** — it is the mechanism that stops the example directory growing into the v1 pattern sprawl.
+This was tried the other way once — a `policy/examples/` directory of complete deployable documents, admissible only when a snippet could not convey the interaction — and it was removed. The bar sounded principled but did not hold up: `check_policies.py` never deploys anything (CI is entirely static, see section 9), so "deployable" only ever meant a document a human deployed once and then checked into the repository as a claim nobody re-verifies. That is a weak guarantee for a policy that looks increasingly like curated content rather than composable teaching. If a genuinely undocumented interaction turns up — something a correctly-composed snippet still gets wrong — track it as an issue rather than a file; the fix belongs in the constraint checklist in [`SKILLS.md`](SKILLS.md#3-constraint-checklist), which is what feeds every future policy the generator builds, not in a document only that one interaction benefits from.
 
 ## 7. CloudFormation / Terraform parity policy
 
-Every `infra/` pattern ships **both** a CloudFormation and a Terraform implementation of its core network and its workloads.
+Every `infra/` pattern ships **both** a CloudFormation and a Terraform implementation of its core network and its workloads. There is currently no exception.
 
-One documented exception: in [`4-hybrid`](infra/4-hybrid/) the **hybrid attachments** (Site-to-Site VPN, Connect, Direct Connect gateway) and the **managed prefix lists** are Terraform-only. Each hybrid sub-type is enabled selectively because their prerequisites differ — a BGP peer, an SD-WAN appliance, a real Direct Connect circuit — which maps cleanly onto Terraform's optional-object variables and awkwardly onto CloudFormation `Conditions`. The policy side is identical either way, so a hybrid attachment created by hand still associates correctly. The exception is stated in the pattern's CloudFormation README and in [`blueprint.yaml`](blueprint.yaml).
+Where a capability is optional because its prerequisites are not something the pattern can provision for you — the Site-to-Site VPN and Direct Connect gateway attachments in [`4-hybrid`](infra/4-hybrid/), which need a BGP peer and a real Direct Connect circuit — both tools still express it. Terraform uses optional-object variables; CloudFormation uses a separate template you deploy only once you have the prerequisite. The policy side is identical either way.
 
-[`blueprint.yaml`](blueprint.yaml) is the machine-readable catalog and the **source of truth for what exists**. Never claim an implementation that is not on disk. When you add or remove one, update `blueprint.yaml` in the same change.
+Never claim an implementation that is not on disk. The human and agent-facing catalogs must remain synchronized; follow [Catalog and agent-index synchronization](#catalog-and-agent-index-synchronization) whenever a pattern changes.
 
 ## 8. Security-scan baseline & suppression mechanism
 
@@ -231,38 +241,38 @@ Rules of thumb:
 
 ---
 
-## 9. CI / pre-commit lockstep
+## 9. CI-aligned repository checks
 
-[`.github/workflows/ci.yml`](.github/workflows/ci.yml) and [`.pre-commit-config.yaml`](.pre-commit-config.yaml) run the **same** checks with the **same** pinned tool versions, so a contributor can reproduce a CI failure locally. A change to one MUST be mirrored in the other.
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) and [`.pre-commit-config.yaml`](.pre-commit-config.yaml) align the repository's domain checks so contributors can reproduce most CI failures locally. They are not identical execution environments: pre-commit adds local hygiene hooks, host-installed tools are not pinned by the hook configuration, and CI defines which findings are blocking. When a check or version has a counterpart in both files, keep those counterparts synchronized.
 
 | Check | CI job | pre-commit hook | Pinned version | Blocking in CI |
 |-------|--------|-----------------|----------------|----------------|
 | Terraform formatting | `fmt` | `terraform_fmt` | Terraform `1.9.8` | yes |
 | Terraform validate | `terraform-checks` | `terraform_validate` | Terraform `1.9.8` | yes |
 | Terraform lint | `tflint` | `terraform_tflint` | tflint `v0.61.0`, AWS ruleset `0.42.0` | yes |
-| CloudFormation lint | `cfn-lint` | `cfn-lint` | cfn-lint `1.46.0` | yes |
+| CloudFormation lint | `cfn-lint` | `cfn-lint` | cfn-lint `1.54.0` | yes |
 | Generated README drift | `terraform-docs` | `terraform_docs` | terraform-docs `v0.21.0` | yes |
-| Policy validation (baselines + examples) | `policy` | `validate-policies` | repo script, no dependencies | yes |
-| Policy snippet validation | `policy` | `validate-policy-snippets` | repo script, no dependencies | yes |
-| Generated CFN policy drift | `policy` | `sync-cfn-policy` | repo script, no dependencies | yes |
-| Markdown links | `markdown-links` | `lychee` (local hook) | lychee action `v2` | yes |
+| Policy checks (baseline structure, snippets, generated CFN drift) | `policy` | `check-policies` | repo script; PyYAML `6.0.2` | yes |
+| Markdown links | `markdown-links` | `lychee` (local hook) | CI action `v2`; local host binary | yes |
 | IaC security scan | `checkov` | `checkov` | checkov `3.2.500` | **no** (`soft_fail: true`) |
 
 Notes:
 
 - Everything is **static**. No job configures AWS credentials, initializes a state backend, or creates a resource. `terraform validate` runs behind `terraform init -backend=false`.
+- Pre-commit additionally runs repository-hygiene hooks such as trailing-whitespace, end-of-file, merge-conflict, YAML, and JSON checks. CI is authoritative for blocking behavior; for example, Checkov is currently non-blocking in CI even though its local hook reports findings.
 - The `discover` job **enumerates pattern directories automatically** by globbing `infra/` for `*.tf` and `cloudformation/*.yaml`. Adding or restructuring patterns does not require editing the workflow — which is what made the v2 migration possible without rewriting CI.
-- The `policy` job runs the two repository scripts in `tools/`. They use only the Python standard library, so there is no install step and no dependency to pin.
+- The `policy` job and `check-policies` pre-commit hook run `.github/scripts/check_policies.py`. Its only external dependency is PyYAML, needed to read the CloudFormation templates. CI installs PyYAML `6.0.2`; because the pre-commit hook uses `language: system`, contributors must install the same version in their host Python environment.
 - `checkov` is the one non-blocking gate. Flip `soft_fail: true` to `false` once the baseline is fully triaged.
 - `ci-passed` is an aggregator job that depends on every other job. Configure **only** that check in branch protection. If you add a new top-level job, add it to `ci-passed`'s `needs` list.
-- Version pins here are deliberate. The sibling [Amazon VPC Lattice Blueprints](https://github.com/aws-samples/amazon-vpc-lattice-blueprints) repository runs the same pipeline shape; when raising a tool version, prefer raising it in both.
+- Version pins in the table are deliberate. For host-installed tools, use the CI version documented in [`CONTRIBUTING.md`](CONTRIBUTING.md) when reproducible local parity matters. The sibling [Amazon VPC Lattice Blueprints](https://github.com/aws-samples/amazon-vpc-lattice-blueprints) repository runs the same pipeline shape; when raising a shared tool version, prefer raising it in both.
 
 Run the checks locally before opening a pull request:
 
 ```bash
 pip install pre-commit
+python3 -m pip install "pyyaml==6.0.2"
 pre-commit install
 pre-commit run --all-files
 ```
 
-The Terraform, tflint, terraform-docs, and lychee hooks shell out to locally installed binaries; cfn-lint and checkov are installed automatically by pre-commit into isolated hook environments.
+The Terraform, tflint, terraform-docs, and lychee hooks shell out to locally installed binaries. The `check-policies` hook also uses host `python3` with PyYAML `6.0.2`. cfn-lint and Checkov are installed automatically by pre-commit into isolated hook environments.

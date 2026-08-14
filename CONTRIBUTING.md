@@ -8,14 +8,16 @@ Please read through this document before submitting any issues or pull requests 
 
 Every published pattern follows a single set of conventions covering naming, directory layout, dependency version pins, license headers, Cloud WAN network-policy authoring, and CloudFormation/Terraform parity. Before adding or modifying a pattern, read [CONVENTIONS.md](CONVENTIONS.md), it is the contract new patterns must follow. Pull requests are expected to conform to it.
 
-## Reporting Bugs/Feature Requests
+## Reporting bugs, feature requests, and generated-policy issues
 
-We welcome you to use the GitHub issue tracker to report bugs or suggest features. When filing an issue, please check existing open, or recently closed, issues to make sure somebody else hasn't already reported the issue. Please try to include as much information as you can. Details like these are incredibly useful:
+We welcome you to use the GitHub issue tracker to report bugs, suggest features, or report unexpected policy output from an AI agent using [`SKILLS.md`](SKILLS.md). When filing an issue, please check existing open or recently closed issues to make sure somebody else has not already reported it. Please include as much relevant information as you can. Details like these are especially useful:
 
 - A reproducible test case or series of steps
 - The version of our code being used
-- Any modifications you've made relevant to the bug
+- Any modifications you made that are relevant to the issue
 - Anything unusual about your environment or deployment
+
+For unexpected generated policy output, use the [Unexpected generated policy template](.github/ISSUE_TEMPLATE/unexpected_policy_output.md). Include the original prompt, complete generated policy, and either the expected policy or precise comments describing the mismatch. Include the agent/model and `SKILLS.md` revision when known. Redact credentials, account or customer identifiers, private endpoints, and confidential data. Report potential vulnerabilities through the [security process](#security-issue-notifications), not a public issue.
 
 ## Contributing via Pull Requests
 
@@ -23,7 +25,7 @@ Contributions via pull requests are much appreciated. Before sending us a pull r
 
 1. You are working against the latest source on the _main_ branch.
 2. You check existing open, and recently merged, pull requests to make sure someone else hasn't addressed the problem already.
-3. Ensure local checks pass. Run `pre-commit run --all-files` before opening a PR so the same static checks CI runs are green locally — see [Local checks (pre-commit)](#local-checks-pre-commit) for setup and required tools.
+3. Ensure local checks pass. Run `pre-commit run --all-files` before opening a PR so the CI-aligned static checks are green locally — see [Local checks (pre-commit)](#local-checks-pre-commit) for setup and required tools.
 4. You open an issue to discuss any significant work - we would hate for your time to be wasted.
 
 To send us a pull request, please:
@@ -35,25 +37,26 @@ To send us a pull request, please:
 5. Send us a pull request, answering any default questions in the pull request interface.
 6. Pay attention to any automated CI failures reported in the pull request, and stay involved in the conversation.
 
-GitHub provides additional document on [forking a repository](https://help.github.com/articles/fork-a-repo/) and [creating a pull request](https://help.github.com/articles/creating-a-pull-request/).
+GitHub provides additional documentation on [forking a repository](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/working-with-forks/fork-a-repo) and [creating a pull request](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/proposing-changes-to-your-work-with-pull-requests/creating-a-pull-request).
 
 ## Local checks (pre-commit)
 
-This repository ships a [`pre-commit`](https://pre-commit.com/) configuration ([`.pre-commit-config.yaml`](.pre-commit-config.yaml)) that mirrors the **static** checks run in CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)), so you can catch and fix issues locally before pushing instead of round-tripping through CI. The checks enforce the repository conventions in [CONVENTIONS.md](CONVENTIONS.md) (formatting, linting, generated-doc drift, link health, and a security scan).
+This repository ships a [`pre-commit`](https://pre-commit.com/) configuration ([`.pre-commit-config.yaml`](.pre-commit-config.yaml)) aligned with the **static** domain checks run in CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)), so you can catch and fix most issues locally before pushing instead of round-tripping through CI. Pre-commit also runs local repository-hygiene checks, while CI remains authoritative for which findings are blocking. Together, the checks enforce the repository conventions in [CONVENTIONS.md](CONVENTIONS.md) (formatting, linting, generated-doc drift, link health, and security scanning).
 
 All hooks are **static**: they need **no AWS credentials** and provision nothing. Terraform validation runs `terraform init -backend=false` followed by `terraform validate`, so no remote state backend or cloud access is involved.
 
 ### Required local tools
 
-Pin your local tools to the versions CI uses so local results match CI. `cfn-lint` and `checkov` are installed automatically by `pre-commit` into isolated hook environments from the revisions pinned in `.pre-commit-config.yaml`; you only need them standalone if you want to run those linters directly. The remaining tools (`terraform`, `tflint`, `terraform-docs`, and `lychee`) are host/`system` tools that the hooks shell out to, so you must install them yourself.
+Use the versions CI documents when reproducible local parity matters. `cfn-lint` and `checkov` are installed automatically by `pre-commit` into isolated hook environments from the revisions pinned in `.pre-commit-config.yaml`; you only need them standalone if you want to run those linters directly. The remaining hooks use host/`system` tools. Install `terraform`, `tflint`, `terraform-docs`, and `lychee` yourself, and keep them aligned with the documented CI versions where one is specified. The `check-policies` hook also uses host `python3` and requires PyYAML; install the CI-pinned version listed below.
 
 | Tool | Version (matches CI) | Used for | Install |
 |------|----------------------|----------|---------|
 | [`pre-commit`](https://pre-commit.com/#install) | >= 3.5.0 | The hook runner itself | `pip install pre-commit` (or `brew install pre-commit`) |
+| [PyYAML](https://pyyaml.org/) | `6.0.2` | Parse CloudFormation templates in the local `check-policies` hook | `python3 -m pip install "pyyaml==6.0.2"` |
 | [Terraform](https://developer.hashicorp.com/terraform/install) | CI uses `1.9.8`; configs require `>= 1.3.0` | `terraform fmt` / `terraform validate` | Official installer, or `brew install terraform` |
 | [tflint](https://github.com/terraform-linters/tflint) | CI uses `v0.61.0` (AWS ruleset `0.42.0`, pinned in [`.tflint.hcl`](.tflint.hcl)) | Terraform lint (AWS ruleset) | `brew install tflint`, or see the [install docs](https://github.com/terraform-linters/tflint#installation) |
 | [terraform-docs](https://terraform-docs.io/user-guide/installation/) | CI uses `v0.21.0` | Generated-README drift check | `brew install terraform-docs` |
-| [cfn-lint](https://github.com/aws-cloudformation/cfn-lint) | `1.46.0` | CloudFormation lint (standalone use; otherwise auto-installed by pre-commit) | `pip install "cfn-lint==1.46.0"` |
+| [cfn-lint](https://github.com/aws-cloudformation/cfn-lint) | `1.54.0` | CloudFormation lint (standalone use; otherwise auto-installed by pre-commit) | `pip install "cfn-lint==1.54.0"` |
 | [checkov](https://www.checkov.io/2.Basics/Installing%20Checkov.html) | `~3.2.x` (pre-commit pins `3.2.500`) | Static IaC security scan (standalone use; otherwise auto-installed by pre-commit) | `pip install checkov` |
 | [lychee](https://github.com/lycheeverse/lychee) | latest | Markdown link check (required by the local `lychee` hook) | `brew install lychee`, or `cargo install lychee` |
 
@@ -62,8 +65,9 @@ Pin your local tools to the versions CI uses so local results match CI. `cfn-lin
 ### Install and run
 
 ```bash
-# 1. Install the runner.
+# 1. Install the runner and the static policy checker's Python dependency.
 pip install pre-commit
+python3 -m pip install "pyyaml==6.0.2"
 
 # 2. Install the git hook so checks run automatically on `git commit`.
 pre-commit install
@@ -83,6 +87,7 @@ pre-commit run terraform_tflint --all-files    # tflint (AWS ruleset)
 pre-commit run terraform_docs --all-files      # generated-README drift
 pre-commit run cfn-lint --all-files            # CloudFormation lint
 pre-commit run checkov --all-files             # security scan
+pre-commit run check-policies --all-files      # policy structure, snippets, and generated CFN drift
 pre-commit run lychee --all-files              # markdown link check
 ```
 
@@ -96,16 +101,16 @@ terraform-docs --config .config/.terraform-docs.yaml infra/<pattern>/terraform
 
 The `terraform-docs` CI job fails if any generated README has drifted from its source.
 
-### Keeping CI and pre-commit in lockstep
+### Keeping CI and pre-commit aligned
 
-The local pre-commit setup and CI are intentionally two views of the **same** static checks. [`.pre-commit-config.yaml`](.pre-commit-config.yaml) and [`.github/workflows/ci.yml`](.github/workflows/ci.yml) are meant to mirror each other: the same checks (`terraform fmt`, `terraform validate`, `tflint`, `terraform-docs` drift, `cfn-lint`, `checkov`, and the markdown link check), run with the same tools, pinned to the same versions. This is what lets `pre-commit run --all-files` predict the CI result.
+The local pre-commit setup and CI provide two views of the repository's **domain checks**: Terraform formatting and validation, tflint, terraform-docs drift, cfn-lint, Checkov, Cloud WAN policy checks, and Markdown links. Pre-commit additionally runs local hygiene hooks, host-tool versions are managed outside the hook configuration, and CI determines whether a finding is blocking. Running `pre-commit run --all-files` is therefore the fastest local signal, but CI remains authoritative.
 
-**Maintenance expectation (checked in review):** when you change one side, you MUST make the equivalent change on the other so local and CI stay consistent. For example:
+**Maintenance expectation (checked in review):** when a check or tool version has a counterpart in both [`.pre-commit-config.yaml`](.pre-commit-config.yaml) and [`.github/workflows/ci.yml`](.github/workflows/ci.yml), update both in the same change. For example:
 
-- **Adding or removing a check** — add/remove the matching hook in `.pre-commit-config.yaml` *and* the matching job/step in `.github/workflows/ci.yml`. If you add a new top-level CI job, also add it to the `needs` list of the `ci-passed` aggregator, which is the single check configured in branch protection.
-- **Bumping a tool version** — keep the versions aligned on both sides. That means the hook `rev:`/pinned versions in `.pre-commit-config.yaml` (e.g. `cfn-lint` `v1.46.0`, `checkov` `3.2.500`) and the corresponding pins in `.github/workflows/ci.yml` (e.g. `terraform_version`, `tflint_version`, `pip install "cfn-lint==..."`, `terraform-docs` version) **and** the version table in the [Required local tools](#required-local-tools) section above.
+- **Adding or removing a shared domain check** — add or remove the matching hook and CI job/step. If you add a new top-level CI job, also add it to the `needs` list of the `ci-passed` aggregator, which is the single check configured in branch protection. Local-only hygiene hooks do not need CI counterparts.
+- **Bumping a tool version** — keep counterpart versions aligned where both environments pin the tool. Update the hook `rev:` or pinned dependency in `.pre-commit-config.yaml`, the corresponding CI pin, and the version table in [Required local tools](#required-local-tools). For host-installed tools, update the documented CI version even though pre-commit cannot enforce the local binary version.
 
-A pull request that changes one side without the other should be flagged in review.
+A pull request that changes only one side of an existing counterpart should be flagged in review.
 
 #### Shared single-source-of-truth config
 
@@ -115,7 +120,7 @@ Some configuration is **not** duplicated (both pre-commit and CI read the same f
 - [`.checkov.yaml`](.checkov.yaml) — checkov scan scope, frameworks, and suppressions.
 - [`.config/.terraform-docs.yaml`](.config/.terraform-docs.yaml) — terraform-docs output config used for the generated-README drift check.
 
-Because these are shared, a change to any of them takes effect in both places at once. The mirroring rule above applies to the checks and tool versions declared *in* `.pre-commit-config.yaml` and `.github/workflows/ci.yml` themselves.
+Because these are shared, a change to any of them takes effect in both places at once. The alignment rule above applies only to checks and versions that have counterparts declared in both `.pre-commit-config.yaml` and `.github/workflows/ci.yml`.
 
 ## Finding contributions to work on
 
