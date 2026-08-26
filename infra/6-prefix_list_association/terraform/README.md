@@ -61,7 +61,7 @@ Everything below is generated from the Terraform source by `terraform-docs`. Do 
 
 | Name | Version |
 |------|---------|
-| <a name="provider_aws.awsoregon"></a> [aws.awsoregon](#provider\_aws.awsoregon) | 6.58.0 |
+| <a name="provider_aws.awsoregon"></a> [aws.awsoregon](#provider\_aws.awsoregon) | >= 6.34.0 |
 
 ## Modules
 
