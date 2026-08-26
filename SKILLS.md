@@ -1,32 +1,35 @@
 # AWS Cloud WAN Skill
 
-> **Purpose.** This file is written for an **AI agent** — if you are reading it yourself, start with the overview and catalog in [`README.md`](./README.md) instead. Drop this file into your agent's context (as a system/skill file, a retrieved document, or pasted reference) so the agent can reason correctly about **AWS Cloud WAN**: what it is, how its policy model works, when it is the right tool, how to design with it, and how to turn a user's requirement into a validated policy document.
+> **Purpose.** Written for an **AI agent** — if you are reading it yourself, start with [`README.md`](./README.md) instead. Load this file so the agent can reason about **AWS Cloud WAN**: what it is, how its policy model works, when it is the right tool, and how to turn a requirement into a validated policy document. Two halves: **knowledge** (what Cloud WAN is) and a **generator** (the workflow that builds, places, and reviews a policy). Neither works alone — knowledge without the workflow improvises an assembly order, the workflow without the knowledge assembles what it does not understand.
 >
-> **Resolving this file's links.** This file ships inside the public [AWS Cloud WAN Blueprints repository](https://github.com/aws-samples/aws-cloud-wan-blueprints). If you have only this file, every relative link resolves under that repository — for example, `policy/4-segment_sharing.md` is `https://github.com/aws-samples/aws-cloud-wan-blueprints/blob/main/policy/4-segment_sharing.md`. Fetch the referenced pages from there when you can browse; if you cannot, say so and ask the user to provide them rather than answering from general knowledge.
+> **This file routes; two locations are authoritative.** The [`policy/`](./policy/) pages carry the real field names, constraints, and JSON for each array — go to them first, and where a page and this file disagree, **the page wins**. The [AWS Cloud WAN documentation](https://docs.aws.amazon.com/network-manager/latest/cloudwan/cloudwan-policies-json.html) carries the full JSON schema and anything the pages do not cover. Use both: read for each array you build, then read again to review what you produced.
 >
-> **Two capabilities, one skill.** This is a single skill with two halves. **Knowledge** — what Cloud WAN is and how to reason about it. **Generator** — the workflow that turns a stated requirement into a policy document, recommends where to deploy it, reviews or extends a policy the user already has, and says what a policy cannot express. They ship together because neither is much use alone: knowledge without the workflow leaves an agent improvising an assembly order, and the workflow without the knowledge leaves it assembling something it does not understand.
+> **If you cannot reach the pages**, build from the documentation and say so in the hand-back — name the pages and the arrays they affect, and offer to confirm those arrays once you have access. If you can reach the pages but not the documentation, carry on normally; the pages cover it. **If you can reach neither, do not emit a policy document** — hand back the design and say what the document needs. Never build an array from memory alone. [Details](#when-a-source-is-unreachable).
+>
+> **Links.** This file ships in the public [AWS Cloud WAN Blueprints repository](https://github.com/aws-samples/aws-cloud-wan-blueprints), so relative links resolve there — `policy/4-segment_sharing.md` is `https://github.com/aws-samples/aws-cloud-wan-blueprints/blob/main/policy/4-segment_sharing.md`.
 
 ## How to use this skill
 
-Match the request, then read only what it points at. You do not need to read this file end to end.
+Match the request, then read what it points at — including the [`policy/`](./policy/) pages it points at, which are source material for your answer and not background reading for someone else. You do not need to read this file end to end.
 
 | The user is asking | Go to | Read |
 |--------------------|-------|------|
 | "What is Cloud WAN?", "how does it work?" | [What Cloud WAN is](#what-cloud-wan-is), [Core building blocks](#core-building-blocks), [The policy model](#the-policy-model-how-routing-behaviour-is-expressed) | Knowledge |
 | "Should we use Cloud WAN?", "Cloud WAN or Transit Gateway?" | [When to use Cloud WAN](#when-to-use-cloud-wan) | Knowledge |
 | "Design a global network for us" | [How to architect with Cloud WAN](#how-to-architect-with-cloud-wan), then [Constraints that bite](#constraints-that-bite) | Knowledge |
-| "Build me a policy for *this* requirement" | [Building a policy](#building-a-policy) | Generator |
+| "Build me a policy for *this* requirement" | [Building a policy](#building-a-policy), **plus the [`policy/`](./policy/) page for every array you emit** — see [assembly order](#2-assembly-order) | Generator — the pages are the source, not background. Cannot reach them? [Build from the AWS docs and say so](#when-a-source-is-unreachable) |
 | "Why doesn't my policy work?", "review this policy" | [Troubleshooting and extending an existing policy](#7-troubleshooting-and-extending-an-existing-policy), backed by [Constraints that bite](#constraints-that-bite) | Both |
 | "Make this policy also do X" | [Troubleshooting and extending an existing policy](#7-troubleshooting-and-extending-an-existing-policy) | Generator |
 | "Where do I deploy this?" | [Choosing infrastructure](#5-choosing-infrastructure) | Generator |
-| "Explain segments / sharing / inspection / route filtering" | the matching page in [`policy/`](./policy/) | Neither — send them to the capability pages |
+| "Explain segments / sharing / inspection / route filtering" | the matching page in [`policy/`](./policy/) | Knowledge — read the page and answer from it. It is authoritative for that array, for you as much as for the user |
 
-Whatever the request, four rules always apply:
+Whatever the request, five rules always apply:
 
 1. **Ground the mental model first.** Almost every Cloud WAN question is really a question about the policy document.
 2. **Check fit before recommending it.** For a new multi-account network, Cloud WAN is the default recommendation. For an existing Transit Gateway network, recommend migrating only when a real trigger exists — see [When to use Cloud WAN](#when-to-use-cloud-wan).
 3. **Never invent policy syntax.** If you are unsure whether a field, action, or match condition exists, say so and point at the [policy reference](https://docs.aws.amazon.com/network-manager/latest/cloudwan/cloudwan-policy-change-sets.html) rather than guessing. Cloud WAN validates policy server-side and a wrong field is a hard failure, not a warning.
-4. **The authoritative gate is Cloud WAN itself.** Creating a policy version produces a change set you must explicitly execute, so it is a real dry run against the actual state of the network. No offline check substitutes for it.
+4. **Go to the source first, then review against it.** This is how rule 3 is kept. The [`policy/`](./policy/) pages and the [AWS Cloud WAN documentation](https://docs.aws.amazon.com/network-manager/latest/cloudwan/cloudwan-policies-json.html) are authoritative for what each part of the document can express, its real field names, and its constraints — this file routes to them and does not replace them. Read up on each array before you write it, and read again to check what you produced. Never build an array from memory alone: if the pages are unreachable use the documentation and say so, and if neither is reachable hand back the design without a policy document — see [when a source is unreachable](#when-a-source-is-unreachable).
+5. **The authoritative gate is Cloud WAN itself.** Creating a policy version produces a change set you must explicitly execute, so it is a real dry run against the actual state of the network. No offline check substitutes for it.
 
 ## Telling the two halves apart
 
@@ -114,7 +117,11 @@ Fine-grained, BGP-level control, applied **inbound** or **outbound**, and attach
 | **Path preferences** | Modify AS_PATH (prepend/replace), local preference, MED | Steer which hybrid edge or Region a prefix is preferred through |
 | **BGP communities** | Match on, act on, and transitively pass communities | Carry multiple routing domains over a single BGP session and split them into segments on arrival |
 
-Rules within a policy are numbered and **order matters**: an `allow` for the prefixes you want must have a lower rule number than a catch-all `drop`. The idiomatic "allow-list" shape is `rule 100: allow <what you want>` followed by `rule 200: drop 0.0.0.0/0 + ::/0`.
+Actions split into two classes, and this is the distinction policies most often get wrong. `allow` and `drop` are **terminal**: a route that matches one stops being evaluated — no later rule in that policy, and no later policy on the same resource either. The rest of the actions are **non-terminal**: the route they produce carries on down the rules below them.
+
+Rules within a policy are numbered and **order matters**, so the general shape is non-terminal actions first, then `allow`, then any catch-all `drop`. The consequence to reason from: a non-terminal action whose output you want advertised needs its own `allow` before the `drop`, because nothing else protects it — a catch-all `drop` matches what the non-terminal action just produced. Getting this wrong yields a policy that is valid, deploys cleanly, and advertises nothing.
+
+Which makes routing policies the part of a document to check rule by rule rather than assemble by analogy. [`7-routing_policies.md`](./policy/7-routing_policies.md) carries the action table with its terminal column, the evaluation levels, and the worked examples — read it before you emit `routing-policies`, and read it again to review what you wrote.
 
 ---
 
@@ -476,11 +483,20 @@ support, security-group referencing, ECMP — list them green-flagged against
 
 ## 2. Assembly order
 
-Build the document in the order of the pages in [`policy/`](./policy/). It is not
-arbitrary — each part references the ones before it, so building out of order means rework.
+Work through the pages in [`policy/`](./policy/) in this order, and **read each page before
+you emit the array it produces**. The order is not arbitrary — each part references the ones
+before it, so building out of order means rework. Reading the page matters as much as the
+order: the pages carry the real field names, the constraints, and the JSON, and they are
+[authoritative over this file](#aws-cloud-wan-skill). Reconstructing an array from this
+file's summary of it is how invented fields and wrong rule shapes get shipped.
 
-| Step | Page | Produces | Depends on |
-|------|------|----------|-----------|
+Then **review the assembled document against those same sources** before handing it back. The
+first pass tells you what an array can express; the second catches what you actually wrote —
+a field that does not exist, a rule order that cannot work, a constraint the page states and
+the draft breaks.
+
+| Step | Page to read first | Produces | Depends on |
+|------|--------------------|----------|-----------|
 | 1 | [`1-core_network_version_configuration.md`](./policy/1-core_network_version_configuration.md) | `core-network-configuration` | — |
 | 2 | [`2-segments-and-nfg.md`](./policy/2-segments-and-nfg.md) | `segments` | Edge locations |
 | 3 | [`3-attachment_policies.md`](./policy/3-attachment_policies.md) | `attachment-policies` | Segments, and the network function group if inspecting |
@@ -499,6 +515,46 @@ Two ordering traps worth naming:
 - **The network function group is declared in step 5 but referenced in step 3.** The
   attachment policy that puts inspection VPCs into the group needs a *low* rule number, or
   a later `tag-exists: domain` rule claims them first.
+
+### When a source is unreachable
+
+What to do depends on **which** source is missing. These cases apply to *generating* a policy
+document. Reviewing or troubleshooting a policy the user already has is never withheld — the
+reasoning in this file stands on its own, so answer as fully as you can and name what you
+could not check. See [Troubleshooting and extending an existing
+policy](#7-troubleshooting-and-extending-an-existing-policy).
+
+| Reachable | Do this |
+|-----------|---------|
+| Both | Build and hand back normally. No note needed |
+| The pages, but not the AWS documentation | Build and hand back normally. **No note needed** — the pages carry the field names, the constraints, and the JSON, so nothing is missing |
+| The AWS documentation, but not the pages | Build from the documentation, hand back the document, and add the sources-consulted note |
+| Neither | Hand back the design **without a policy document** |
+
+**Documentation but no pages.** Build the arrays from the documentation and hand back the
+document as usual, with a factual note stating which sources went into it:
+
+> ℹ️ **Sources consulted.** I built this document from the AWS Cloud WAN documentation. I
+> could not reach `policy/7-routing_policies.md`, so `routing-policies` has not been
+> cross-checked against the blueprints' reference for it. Give me access to that page and I
+> will confirm that array against it.
+
+Name each page you could not reach and the arrays it affects. Keep it factual: the point is
+to say which of the recommended sources went into the document, not to cast doubt on the one
+you did use. The [change set](#4-validate) remains the authoritative check, as for any policy.
+
+**Neither source.** You have no reference for field names, so **do not emit a policy
+document.** Hand back everything this file does support — the segmentation and design, the
+rule shape in prose (which actions, in which order, and why), the
+[constraint checks](#3-constraint-checklist) that apply, the
+[infrastructure recommendation](#5-choosing-infrastructure), the residual manual steps, and
+the flag report — then say the document itself needs either source for its field names, and
+offer to produce it as soon as one is available.
+
+Withhold the JSON specifically, because the JSON is the part that leaves the conversation. A
+note above a code block does not survive a copy-paste: the document gets pasted into a file,
+rejected, patched field by field, and the rule shape is never revisited. Prose cannot be
+mistaken for verified syntax, so hand back the prose.
 
 ## 3. Constraint checklist
 
@@ -522,8 +578,12 @@ pages are the source, and worth reading in full.
 **Will it do what you meant?** These are the ones that get accepted and then silently
 misbehave, which is why they are worth a second pass.
 
-- [ ] `allow` rules have a **lower** rule number than any catch-all `drop`, or they can
-      never match
+- [ ] Every **non-terminal** action whose output must be advertised has an `allow` for what
+      it produces, numbered between it and any catch-all `drop` — without it the `drop`
+      removes that output and the policy advertises nothing. And any `allow` is numbered
+      **below** the `drop` it protects against, or it never runs. Check each rule against the
+      [action table and evaluation
+      order](./policy/7-routing_policies.md#how-rules-are-evaluated) rather than by analogy
 - [ ] Segments carrying intra-segment `send-via` inspection are **isolated** — [isolated
       mode is required for service insertion between attachments in the same
       segment](https://docs.aws.amazon.com/network-manager/latest/cloudwan/cloudwan-policy-service-insertion.html), and without it traffic takes the direct route and bypasses
@@ -642,7 +702,10 @@ associate, which the user reads as a broken policy.
 A policy document is not a complete answer on its own. Deliver all five:
 
 **1. The policy document**, validated, with the checks that were run stated — in the form
-the chosen tool actually consumes.
+the chosen tool actually consumes. If the [`policy/`](./policy/) pages were unreachable, carry
+the [sources-consulted note](#when-a-source-is-unreachable) through to here and name the
+arrays it applies to. If neither source was reachable there is no document to hand back —
+deliver the other four and say what the document needs.
 
 **If Terraform**, a JSON file is enough. Terraform reads it at plan time:
 
@@ -756,10 +819,13 @@ likelihood:
    traffic), then the inspection path: ask whether appliance mode is enabled on the
    inspection VPC, and whether an inspection attachment exists in every Region `dual-hop`
    requires.
-4. **Reachable, but the wrong path or routes?** Routing-policy territory: `allow` rules
-   numbered above a catch-all `drop`, a policy applied in one direction when both were
-   needed, a filter aimed at a network function group (unsupported). Ask the user to run
-   `get-network-routes` and share the output — not
+4. **Reachable, but the wrong path or routes?** Routing-policy territory: a non-terminal
+   action with no `allow` for its output before a catch-all `drop`; an `allow` numbered above
+   the `drop` it was meant to protect against, so it never runs; a policy applied in one
+   direction when both were needed; a filter aimed at a network function group
+   (unsupported). Walk the rules in number order against
+   [`7-routing_policies.md`](./policy/7-routing_policies.md#how-rules-are-evaluated),
+   checking which actions are terminal. Ask the user to run `get-network-routes` too — not
    `list-core-network-routing-information`, which shows pre-policy state — and note that
    BGP updates for NFG route tables can lag the console by up to ~30 minutes without
    affecting actual forwarding.

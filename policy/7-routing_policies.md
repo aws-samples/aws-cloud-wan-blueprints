@@ -334,7 +334,7 @@ In the VPN attachment where we have associated both routing policies, `filterDec
 
 Aggregates many specific prefixes into one summary advertisement, keeping on-premises routing tables small. Outbound only, and only on BGP-capable attachments. `summarize` does not care how the prefixes it replaces were matched — this example shows two ways to select them in one rule.
 
-This example combines a literal CIDR and a managed [prefix list](../infra/6-prefix_list_association/) referenced by alias.
+This example combines a literal CIDR and a managed [prefix list](../infra/6-prefix_list_association/) referenced by alias in rule `100`, then adds the two rules that make "on-premises receives the summary and nothing else" actually hold.
 
 ```json
 {
@@ -367,6 +367,36 @@ This example combines a literal CIDR and a managed [prefix list](../infra/6-pref
               "value": "10.0.0.0/8"
             }
           }
+        },
+        {
+          "rule-number": 200,
+          "rule-definition": {
+            "match-conditions": [
+              {
+                "type": "prefix-equals",
+                "value": "10.0.0.0/8"
+              }
+            ],
+            "condition-logic": "or",
+            "action": { "type": "allow" }
+          }
+        },
+        {
+          "rule-number": 300,
+          "rule-definition": {
+            "match-conditions": [
+              {
+                "type": "prefix-in-cidr",
+                "value": "0.0.0.0/0"
+              },
+              {
+                "type": "prefix-equals",
+                "value": "0.0.0.0/0"
+              }
+            ],
+            "condition-logic": "or",
+            "action": { "type": "drop" }
+          }
         }
       ]
     }
@@ -374,11 +404,13 @@ This example combines a literal CIDR and a managed [prefix list](../infra/6-pref
 }
 ```
 
-The paired CIDR conditions select the literal `10.20.0.0/16` route and more-specific prefixes under it, with no separate resource to manage. `prefix-in-prefix-list` selects routes from the managed list by alias — useful when the ranges to summarize are maintained outside the policy or are not consecutive. With `or`, a route matching either selection is summarized into `10.0.0.0/8`.
+In rule `100`, the paired CIDR conditions select the literal `10.20.0.0/16` route and more-specific prefixes under it, with no separate resource to manage. `prefix-in-prefix-list` selects routes from the managed list by alias — useful when the ranges to summarize are maintained outside the policy or are not consecutive. With `or`, a route matching either selection is summarized into `10.0.0.0/8`.
 
-> **Summarization withdraws the matched prefixes and advertises the summary.** Both happen together, but the summary has to actually cover every prefix it replaces — a matched prefix outside the summary becomes an unreachable range.
+Rules `200` and `300` are what restrict the advertisement to the summary. Rule `300` drops everything, so anything rule `100` did not summarize is withdrawn; rule `200` sits above it and lets the `10.0.0.0/8` aggregate through. Because `summarize` is **not terminal**, the aggregate rule `100` produced keeps being evaluated — rule `200` is the rule that stops rule `300` from taking it.
 
-This is commonly associated at the attachment scope — see [`9-attachment_routing_policy_rules.md`](./9-attachment_routing_policy_rules.md) for how.
+> **Omit rule `200` and this policy advertises nothing at all.** `summarize` is non-terminal, so the aggregate it produces carries on down the rules and a catch-all `drop` below it matches and removes it. The prefixes are withdrawn, the summary is dropped, and the peer receives an empty advertisement — with nothing rejected at policy-validation time and no error anywhere to explain it. Whenever a `summarize` and a catch-all `drop` are in the same policy, the `allow` between them is mandatory. The general form of this rule, covering the BGP attribute actions too, is in [Running rules inside one policy](#running-rules-inside-one-policy).
+
+This is commonly associated at the attachment scope — see [`9-attachment_routing_policy_rules.md`](./9-attachment_routing_policy_rules.md) for how. On a Direct Connect gateway the shape above is needed once per Region, scoped with `edge-locations`, for the reason immediately below.
 
 #### Direct Connect gateway needs one summary per Region
 
