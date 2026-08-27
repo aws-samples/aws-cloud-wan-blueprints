@@ -69,6 +69,7 @@ policy/                          # flat, one document per policy-document area
 
 .github/scripts/                 # check_policies.py - CI pre-merge policy checks
 images/                          # architecture diagrams + editable sources
+llms.txt                         # annotated index of the repository, written for an AI agent
 ```
 
 Rules:
@@ -85,8 +86,10 @@ Rules:
 
 The repository exposes the same structure to human readers and AI agents. Keep those indexes synchronized in the same change:
 
-- When a pattern is added, removed, or renamed, update the catalogs in [`README.md`](README.md), [`infra/README.md`](infra/README.md), and [Choosing infrastructure](SKILLS.md#5-choosing-infrastructure).
-- When a policy capability page is added, removed, or renamed, update [`README.md`](README.md), [`policy/README.md`](policy/README.md), the [`SKILLS.md`](SKILLS.md#policy--the-capability-pages) capability table, the [assembly order](SKILLS.md#2-assembly-order), and any affected constraint-checklist entries.
+- When a pattern is added, removed, or renamed, update the catalogs in [`README.md`](README.md), [`infra/README.md`](infra/README.md), [Choosing infrastructure](SKILLS.md#5-choosing-infrastructure), and [`llms.txt`](llms.txt).
+- When a policy capability page is added, removed, or renamed, update [`README.md`](README.md), [`policy/README.md`](policy/README.md), the [`SKILLS.md`](SKILLS.md#policy--the-capability-pages) capability table, the [assembly order](SKILLS.md#2-assembly-order), [`llms.txt`](llms.txt), and any affected constraint-checklist entries.
+
+[`llms.txt`](llms.txt) is the agent-facing index: an annotated list of every `policy/` page and every `infra/` pattern, each line saying which question that resource answers. It is not a summary of the repository's content and must not become one — it is a routing table, and its only job is to stop an agent guessing at structure it can be told. It **must list every page and every pattern**, so a page or pattern that is not in it is a bug. Its links are relative, and there is deliberately no `llms-full.txt`.
 
 ### Documentation tiers
 
