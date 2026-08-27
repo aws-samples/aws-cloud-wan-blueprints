@@ -1,3 +1,8 @@
+---
+title: "Connect on-premises to Cloud WAN: Site-to-Site VPN and Direct Connect gateway attachments"
+description: "A deployable CloudFormation and Terraform pattern building the AWS side of hybrid connectivity, with optional Site-to-Site VPN and Direct Connect gateway attachments landing in a hybrid segment shared with the workload segment. The one pattern that applies no attachment tags: it associates by attachment type instead, which is the right choice when the type is the intent."
+---
+
 # Infrastructure-as-Code Patterns — AWS Cloud WAN with hybrid connectivity
 
 In this pattern, we want to show how AWS Cloud WAN integrates with AWS Site-to-Site VPN and AWS Direct Connect to achieve hybrid connectivity.

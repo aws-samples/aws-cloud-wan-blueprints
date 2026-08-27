@@ -1,3 +1,8 @@
+---
+title: "Connect AWS Transit Gateway to Cloud WAN: peering and route table attachments"
+description: "A deployable CloudFormation and Terraform pattern peering a Transit Gateway in each Region with a Cloud WAN core network, then binding its route tables to segments — the coexistence and migration path for an existing Transit Gateway network. Shows how intra-Region separation comes from Transit Gateway route tables while cross-Region separation comes from Cloud WAN segments."
+---
+
 # Infrastructure-as-Code Patterns — AWS Cloud WAN with AWS Transit Gateway
 
 In this pattern, we want to show how AWS Cloud WAN connects to AWS Transit Gateway using a peering connection - and how segmentation can be configured on top of that peering. Users can test global traffic segmentation, communication between segments, and segment isolation for workloads that reach the core network through a Transit Gateway.

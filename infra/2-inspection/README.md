@@ -1,3 +1,8 @@
+---
+title: "Deploy Cloud WAN traffic inspection: AWS Network Firewall with service insertion"
+description: "A deployable CloudFormation and Terraform pattern with an inspection VPC and AWS Network Firewall per Region, showing how Cloud WAN steers traffic through a firewall. Its baseline policy demonstrates send-to egress inspection and send-via single-hop east-west inspection with an edge override, and the README shows how to confirm which firewall inspected a flow."
+---
+
 # Infrastructure-as-Code Patterns — AWS Cloud WAN with traffic inspection
 
 In this pattern, we want to show how AWS Cloud WAN steers traffic through a firewall using service insertion. Users can test egress (internet-bound) inspection, east-west inspection between segments, and how segment isolation behaves when only some traffic is inspected.

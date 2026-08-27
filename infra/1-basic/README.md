@@ -1,3 +1,8 @@
+---
+title: "Deploy a basic Cloud WAN network: VPC attachments, segments and segment sharing"
+description: "A deployable CloudFormation and Terraform pattern with three spoke VPCs per Region across two Regions, showing how a VPC attaches to a core network and what segmentation actually blocks. Its baseline policy demonstrates tag-based attachment association, global segments, and non-transitive sharing into an isolated shared segment, with a reachability table to test against."
+---
+
 # Infrastructure-as-Code Patterns — Basic AWS Cloud WAN network
 
 In this pattern, we want to show a simple AWS Cloud WAN implementation - focusing on how VPCs connect to a core network. Having multiple VPCs per Region, users can test global traffic segmentation, communication between segments, and segment isolation.
