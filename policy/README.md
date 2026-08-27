@@ -1,4 +1,9 @@
-# Cloud WAN Network Policy
+---
+title: "AWS Cloud WAN network policy: what a core network policy document can express"
+description: "A capability reference for building an AWS Cloud WAN core network policy, mapping each part of your design to the JSON that implements it: segments, attachment policies, segment sharing, service insertion, static routes and routing policies. Includes how to validate a policy with a change set before it changes anything."
+---
+
+# AWS Cloud WAN Network Policy
 
 This section is a capability reference for building an AWS Cloud WAN core network policy document. It explains the available policy constructs, their dependencies, and the decisions that commonly affect a design. It complements, but does not replace, the [AWS Cloud WAN documentation](https://docs.aws.amazon.com/network-manager/latest/cloudwan/cloudwan-policy-documents.html).
 
