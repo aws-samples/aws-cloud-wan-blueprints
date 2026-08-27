@@ -110,6 +110,31 @@ Rules:
 - Every pattern README ends with a **`## Cost`** section: a table of what is created, how many, and how each is charged, then a line naming what dominates. Cost is per-pattern because the resources are — `2-inspection` is an order of magnitude more expensive than `5-multi_account`.
 - `5-multi_account` is the documented exception to tier 2: it has no workloads, so no reachability table. Its README carries the multi-account capabilities and limitations instead.
 
+### Front matter on guidance pages
+
+Every `policy/` page and every tier 1 and tier 2 `infra/` README opens with YAML front matter carrying exactly two keys, `title` and `description`, followed by a blank line and then the `#` heading:
+
+```markdown
+---
+title: "Cloud WAN service insertion: send-to and send-via for centralized traffic inspection"
+description: "How to steer AWS Cloud WAN traffic through a firewall, with send-to for internet-bound egress and send-via for east-west."
+---
+
+# Service insertion
+```
+
+Most readers reach one of these pages directly — from a link someone sent them, or from a search — rather than by browsing the repository from its README. For that reader the `title` and `description` are the entire preview, and the only thing they have to judge whether the page answers their question. Writing them well is a courtesy to a reader who has not arrived yet.
+
+Rules:
+
+- **The `title` says what the page answers, not what the page is called.** "Service insertion" only repeats the filename. "Cloud WAN service insertion: send-to and send-via for centralized traffic inspection" names the capability, the policy keys and the outcome, so a reader can tell in one line whether to open it. Lead with the terms a reader would already have in mind.
+- **The `description` is one or two sentences on what the page concretely shows**, in the reader's vocabulary. Not an abstract of the page, and not a restatement of the title.
+- **The `title` does not have to match the `#` heading**, and usually will not. The heading names the page for someone already inside the repository, with the surrounding context visible; the title has to stand on its own with no context at all. Keep the heading as it is — changing headings churns anchors that other pages and external links depend on.
+- **Both values are quoted**, because a colon is common in both and an unquoted colon breaks YAML.
+- **Tier 3 files do not carry front matter.** They are mechanics that nobody arrives at directly, and `terraform/README.md` is generated from `.header.md`, so adding it would mean teaching terraform-docs to emit it.
+
+Front matter is inert on GitHub beyond rendering as a small table, and no repository check parses it. Nothing enforces that a title is well written, so it is a review concern.
+
 ## 3. Version pins
 
 A single pinned set is applied to every pattern. **Modules are exact-pinned with `=`; providers use a single floor `>=`.**
@@ -153,7 +178,7 @@ Every IaC source file carries the `MIT-0` copyright header at the very top.
 
 For any other comment-supporting source file (Makefile, shell, Python), use the equivalent comment syntax with the same two lines.
 
-**Markdown does not carry the header.** `LICENSE` at the repository root covers the repository, and an SPDX header exists for source files that may be copied out of it in isolation — which is not what documentation is for. Repository documentation outside `.github/ISSUE_TEMPLATE/` starts with its `#` heading; GitHub issue templates begin with the YAML front matter required by GitHub and then use Markdown headings.
+**Markdown does not carry the header.** `LICENSE` at the repository root covers the repository, and an SPDX header exists for source files that may be copied out of it in isolation — which is not what documentation is for. No markdown file carries the SPDX header; where a markdown file opens with YAML front matter, that front matter is metadata and never a license header. See [Front matter on guidance pages](#front-matter-on-guidance-pages) for which files carry it and what goes in it.
 
 ---
 
@@ -214,6 +239,28 @@ A **snippet** is a fragment — one array element, or one array — illustrative
 - The generator capability in [`SKILLS.md`](SKILLS.md) is what turns a use case into a full document: it is the logic that assembles snippets in the right order, checks the constraints that bite, and hands back a validated policy. **That is where end-to-end policy composition lives** — not in a static file checked into this directory.
 
 This was tried the other way once — a `policy/examples/` directory of complete deployable documents, admissible only when a snippet could not convey the interaction — and it was removed. The bar sounded principled but did not hold up: `check_policies.py` never deploys anything (CI is entirely static, see section 9), so "deployable" only ever meant a document a human deployed once and then checked into the repository as a claim nobody re-verifies. That is a weak guarantee for a policy that looks increasingly like curated content rather than composable teaching. If a genuinely undocumented interaction turns up — something a correctly-composed snippet still gets wrong — track it as an issue rather than a file; the fix belongs in the constraint checklist in [`SKILLS.md`](SKILLS.md#3-constraint-checklist), which is what feeds every future policy the generator builds, not in a document only that one interaction benefits from.
+
+### Headings name the mechanism, not only the scenario
+
+These pages are long, and a reader rarely reads one start to finish. They arrive with a term already in mind — a policy JSON key, a BGP attribute, an AWS feature name — and scan the headings for it. A heading that states only the scenario is invisible to that reader, however good the section beneath it is.
+
+[`5-service_insertion.md`](policy/5-service_insertion.md) is the model: its headings are `send-to`, `send-via`, `mode`, `when-sent-to`, `via`, so a reader holding any one of those keys lands on the right section immediately. [`8-edge_location_associations.md`](policy/8-edge_location_associations.md) and [`9-attachment_routing_policy_rules.md`](policy/9-attachment_routing_policy_rules.md) read the same way.
+
+So when a section demonstrates a use case, its heading states **both** the mechanism and the scenario:
+
+| | |
+|---|---|
+| Not | `### An external partner gets its own segment` |
+| But | `### account conditions with association-method constant: an external partner gets its own segment` |
+
+The scenario half keeps the heading readable in a table of contents; the mechanism half is what a scanning reader is looking for. A heading carrying only the scenario describes the section to someone who is already reading it, which is the one reader who does not need the help.
+
+Rules:
+
+- **Lead with the policy key, condition type, action or attribute name**, then state the scenario after a colon.
+- **Use only vocabulary that already appears in that page's own body text**, or in the [AWS Cloud WAN documentation](https://docs.aws.amazon.com/network-manager/latest/cloudwan/cloudwan-policies-json.html). A heading is not the place to coin a term, and a heading naming something the body never mentions is worse than a vague one.
+- **Do not rename a heading for style alone.** Headings are anchors, and an anchor is a URL other pages and external sites link to. Renaming one is a real cost, worth paying only for a real gain in what the heading tells a reader.
+- **When a heading does change, update every in-repo link to its old anchor** — search the whole repository, including [`README.md`](README.md), [`policy/README.md`](policy/README.md) and [`SKILLS.md`](SKILLS.md), not just the page itself. Note externally-linkable anchors that moved in the pull request description; do not add redirect stubs.
 
 ## 7. CloudFormation / Terraform parity policy
 
