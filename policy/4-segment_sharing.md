@@ -1,3 +1,8 @@
+---
+title: "Cloud WAN segment sharing: bidirectional, non-transitive route exchange between segments"
+description: "How a share action opens reachability between AWS Cloud WAN segments, why sharing is bidirectional but never transitive, and the three share-with forms including the wildcard and except. Includes how a routing policy applied to a share reads its direction from the segment the share is declared on."
+---
+
 # Segment sharing
 
 Segments are closed to one another by default. A [`share`](https://docs.aws.amazon.com/network-manager/latest/cloudwan/cloudwan-policies-json.html) action opens a path from one segment to one or more others, and it is the simplest way to do it: routes are exchanged so attachments on each side can reach each other, with nothing in the traffic path.

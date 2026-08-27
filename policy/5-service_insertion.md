@@ -1,3 +1,8 @@
+---
+title: "Cloud WAN service insertion: send-to and send-via for centralized traffic inspection"
+description: "How to steer AWS Cloud WAN traffic through a firewall, with send-to for internet-bound egress and send-via for east-west, choosing between single-hop and dual-hop, and pinning which Region inspects a flow with with-edge-overrides. Includes the segment and network function group route tables each action builds, and the constraints on mixing modes."
+---
+
 # Service insertion
 
 [Service insertion](https://docs.aws.amazon.com/network-manager/latest/cloudwan/cloudwan-policy-service-insertion.html) places a security appliance in the traffic path without you managing the routing that makes it happen. You declare which traffic should be inspected, through which group of appliances, and in which Regions. AWS Cloud WAN builds and maintains the routes that redirect traffic through the appliance and back — dynamically, as attachments join and leave the core network.

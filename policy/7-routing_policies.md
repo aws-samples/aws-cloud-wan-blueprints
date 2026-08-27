@@ -1,3 +1,8 @@
+---
+title: "Cloud WAN routing policies: advanced route filtering, summarization, BGP attributes and communities"
+description: "The advanced routing controls an AWS Cloud WAN policy can express: allow and drop route filtering, route summarization toward on-premises, BGP attribute modification with AS_PATH, local preference and MED to influence path selection, and BGP community matching. Covers which actions are terminal and the rule order that follows, the attachment, segment share and edge-pair association scopes, and why routing policies do not apply to a network function group."
+---
+
 # Routing policies
 
 A [routing policy](https://docs.aws.amazon.com/network-manager/latest/cloudwan/cloudwan-routing-policies.html) is a named, ordered set of match-action rules that Cloud WAN evaluates as routes propagate through the core network. Rules match on routes and act on routes, never on packets: a policy changes forwarding only by changing the routes the forwarding decision is made from.
@@ -146,7 +151,7 @@ Evaluation has three levels: `condition-logic` combines conditions in one rule; 
 
 > **Rules and policies order the same way, but a policy is reusable and a rule is not.** A rule only exists inside its one policy. A policy has a name and can be associated to several resources at once — so splitting logic into two policies, instead of two rules, is what lets one be reused unchanged elsewhere while the other stays specific to one resource.
 
-### Combining conditions inside a rule
+### `condition-logic`: combining conditions inside a rule
 
 | `condition-logic` | Matches when | Use for |
 |---|---|---|
@@ -198,7 +203,7 @@ In this second example, a route only ever equals one prefix, never two, so `or` 
 }
 ```
 
-### Running rules inside one policy
+### `rule-number`: running rules inside one policy
 
 > **Order by terminal action: attribute modifications first, then `allow`, then `drop`.** Put `allow` rules before the `drop` rules they are meant to protect routes from, and put attribute modifications before both — a rule numbered after a terminal match on the same route never runs.
 
@@ -265,7 +270,7 @@ In the following example, rule `50` sets local preference on `10.0.0.0/8` withou
 }
 ```
 
-### Running multiple policies on the same resource
+### `routing-policy-number`: running multiple policies on the same resource
 
 Every association scope accepts a list of policy names, not just one, ordered by `routing-policy-number`.
 
@@ -328,9 +333,9 @@ In the VPN attachment where we have associated both routing policies, `filterDec
 
 > **`routing-policy-number` only orders policies at the same scope.** A route learned through an attachment and then shared into another segment passes two different scopes, in a fixed sequence that `routing-policy-number` does not touch: the [attachment's own policies](./9-attachment_routing_policy_rules.md) run first, then the [share's](./4-segment_sharing.md#routing-policy-names) or [edge association's](./8-edge_location_associations.md).
 
-## Routing policies in practice
+## Routing policy examples: route summarization, BGP attribute modification and community filtering
 
-### Summarizing routes toward on-premises
+### `summarize`: route summarization toward on-premises
 
 Aggregates many specific prefixes into one summary advertisement, keeping on-premises routing tables small. Outbound only, and only on BGP-capable attachments. `summarize` does not care how the prefixes it replaces were matched — this example shows two ways to select them in one rule.
 
@@ -408,17 +413,17 @@ In rule `100`, the paired CIDR conditions select the literal `10.20.0.0/16` rout
 
 Rules `200` and `300` are what restrict the advertisement to the summary. Rule `300` drops everything, so anything rule `100` did not summarize is withdrawn; rule `200` sits above it and lets the `10.0.0.0/8` aggregate through. Because `summarize` is **not terminal**, the aggregate rule `100` produced keeps being evaluated — rule `200` is the rule that stops rule `300` from taking it.
 
-> **Omit rule `200` and this policy advertises nothing at all.** `summarize` is non-terminal, so the aggregate it produces carries on down the rules and a catch-all `drop` below it matches and removes it. The prefixes are withdrawn, the summary is dropped, and the peer receives an empty advertisement — with nothing rejected at policy-validation time and no error anywhere to explain it. Whenever a `summarize` and a catch-all `drop` are in the same policy, the `allow` between them is mandatory. The general form of this rule, covering the BGP attribute actions too, is in [Running rules inside one policy](#running-rules-inside-one-policy).
+> **Omit rule `200` and this policy advertises nothing at all.** `summarize` is non-terminal, so the aggregate it produces carries on down the rules and a catch-all `drop` below it matches and removes it. The prefixes are withdrawn, the summary is dropped, and the peer receives an empty advertisement — with nothing rejected at policy-validation time and no error anywhere to explain it. Whenever a `summarize` and a catch-all `drop` are in the same policy, the `allow` between them is mandatory. The general form of this rule, covering the BGP attribute actions too, is in [Running rules inside one policy](#rule-number-running-rules-inside-one-policy).
 
 This is commonly associated at the attachment scope — see [`9-attachment_routing_policy_rules.md`](./9-attachment_routing_policy_rules.md) for how. On a Direct Connect gateway the shape above is needed once per Region, scoped with `edge-locations`, for the reason immediately below.
 
-#### Direct Connect gateway needs one summary per Region
+#### Direct Connect gateway needs one summary per Region, scoped with `edge-locations`
 
 A Direct Connect gateway attaches to every CNE. If every CNE advertises the same `10.0.0.0/8`, on-premises routers see equal-cost paths; traffic for a `eu-west-1` workload can enter through `us-east-1` and cross the backbone.
 
 Create one summarization policy per Region's supernet — for example, `summarizeNVirginiaIpv4Routes` for `10.10.0.0/16` and `summarizeIrelandIpv4Routes` for `10.0.0.0/16` — and scope each policy to its Region with [`edge-locations`](./9-attachment_routing_policy_rules.md#edge-locations). Each CNE then advertises only its Region's space, so on-premises traffic enters through the nearest Region.
 
-### Preferring one Region's hybrid edge
+### `prepend-asn-list`: AS_PATH prepending to prefer one Region's hybrid edge
 
 When a CNE receives the same on-premises prefix from hybrid attachments in multiple Regions, `prepend-asn-list` can make one inter-Region copy less preferred without removing it as failover.
 
@@ -460,7 +465,7 @@ In this example, hybrid attachments in `us-east-1` and `eu-west-1` advertise the
 
 **For edge-pair association details**, see [`8-edge_location_associations.md`](./8-edge_location_associations.md). The same policy shape can also be applied on a [segment share](./4-segment_sharing.md#routing-policy-names).
 
-### Filtering routes by BGP community
+### `community-in-list`: filtering routes by BGP community
 
 In hybrid environments, an on-premises router can advertise routes for several routing domains through one BGP peer and tag each set with a BGP community. Routing policies expose each tagged set only to its intended segment, reducing the need for separate BGP peers solely to preserve route segmentation.
 
@@ -530,7 +535,7 @@ route-map DEV-ROUTES permit 10
 
 ## Constraints and workarounds
 
-### Verify policy effects with the right API
+### `get-network-routes` versus `list-core-network-routing-information`: verify policy effects with the right API
 
 **`list-core-network-routing-information` shows routing state *before* routing policies are applied. Do not use it to verify a filter's post-policy result.** For post-policy state, use `get-network-routes` or the route view in the Network Manager console:
 
@@ -542,12 +547,12 @@ aws networkmanager get-network-routes \
 
 `list-core-network-routing-information` remains the right tool for inspecting BGP sessions and pre-policy AS_PATH.
 
-### Routing policies do not apply in service insertion
+### Routing policies do not apply to a network function group in service insertion
 
 Routing policies are not supported for a network function group (NFG). When [service insertion](./5-service_insertion.md) redirects traffic to an inspection appliance, policies cannot filter, summarize, or modify BGP attributes in the NFG route table.
 
 Apply any required routing policy at the [attachment layer](./9-attachment_routing_policy_rules.md) before the route enters the service-insertion path.
 
-### TGW route table attachments on one peering share outbound policies
+### Transit Gateway route table attachments on one peering share outbound routing policies
 
 Transit Gateway route table attachments that use the same peering and the same segment share their outbound routing policies: associate policy A to one attachment and policy B to another, and both attachments get both policies. Segment them apart, or across separate peerings, where their outbound treatment must differ.

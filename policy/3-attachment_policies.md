@@ -1,8 +1,13 @@
+---
+title: "Cloud WAN attachment policies: automatic attachment association by tag, attachment type, account or Region"
+description: "How AWS Cloud WAN attachment policies map each attachment to a segment or network function group automatically, so a workload team onboards without a central ticket. Covers every match condition — tag-exists, tag-value, attachment-type, account, region and resource-id — first-match-wins rule ordering, association-method constant versus tag, add-to-network-function-group for inspection VPCs, require-acceptance, and who controls the tags in a shared core network."
+---
+
 # Attachment policies
 
 [Attachment policies](https://docs.aws.amazon.com/network-manager/latest/cloudwan/cloudwan-policies-json.html#cloudwan-attach-policies-json) map an attachment to a segment or to a network function group. Rather than associating each one by hand, you declare the intent once and every attachment that matches lands where it belongs — which is what makes AWS Cloud WAN self-service.
 
-> **When you match on tags, they are the tags on the attachment** — not on the resource behind it. Those tags also travel with the attachment, so in a shared core network a tag set by the spoke account is what the core network's rules evaluate. That is what makes cross-account self-service work, and it is why tag-based association raises the question of [who controls the tags](#who-controls-the-tags).
+> **When you match on tags, they are the tags on the attachment** — not on the resource behind it. Those tags also travel with the attachment, so in a shared core network a tag set by the spoke account is what the core network's rules evaluate. That is what makes cross-account self-service work, and it is why tag-based association raises the question of [who controls the tags](#who-controls-the-tags-in-a-shared-core-network).
 
 The `attachment-policies` array is optional, and each rule in it takes five fields:
 
@@ -103,7 +108,7 @@ What happens when the rule matches. An attachment gets exactly one destination: 
 }
 ```
 
-The leverage is in that pairing. Agree a tagging convention — one key whose value is always a segment name — and a single rule associates the whole estate: `domain = production` goes to `production`, `domain = development` to `development`, and a segment you add next year needs no change here at all. Without the convention you write a near-identical `constant` rule per segment, and edit all of them whenever the set of segments changes. [VPCs choose their own segment](#vpcs-choose-their-own-segment) works through this.
+The leverage is in that pairing. Agree a tagging convention — one key whose value is always a segment name — and a single rule associates the whole estate: `domain = production` goes to `production`, `domain = development` to `development`, and a segment you add next year needs no change here at all. Without the convention you write a near-identical `constant` rule per segment, and edit all of them whenever the set of segments changes. [VPCs choose their own segment](#tag-based-attachment-policy-vpcs-choose-their-own-segment-with-association-method-tag) works through this.
 
 3. **`add-to-network-function-group`** sends the attachment to a group instead, under the narrower conditions described at the top of this page.
 
@@ -125,7 +130,7 @@ The leverage is in that pairing. Agree a tagging convention — one key whose va
 
 Only `true` is valid. Attachments this rule matches then wait for approval even where the segment does not require it. The reverse is not possible — a rule cannot waive acceptance the segment requires — so use it to gate one Region or one account while the rest stays self-service.
 
-## Who controls the tags?
+## Who controls the tags in a shared core network?
 
 The rules are yours — as core network owner you decide which tags map an attachment to a specific segment or network function group. The tags are not: in a shared core network the attachment owner sets them and can change them at any time, so an attachment can move segment, or stop associating altogether, without the policy changing.
 
@@ -133,11 +138,11 @@ This applies to any rule that depends on tags, and we recommend three ways to ke
 
 1. **Govern the tags themselves.** Use [service control policies](https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_policies_scps.html) in AWS Organizations to control who may set the tag keys your rules match on. Match on a tag a spoke account cannot change and the exposure goes away. It is the only option that removes the problem rather than compensating for it, and the network stays automatic.
 2. **Require acceptance.** Either on the segment, or per rule with `require-acceptance`. Effective, but it puts a manual step into an otherwise dynamic network, so prefer it where a human decision is genuinely wanted.
-3. **Pin the exceptions to accounts.** For one or two genuinely sensitive segments, a `constant` rule keyed on `account` takes tags out of the decision altogether — see [An external partner gets its own segment](#an-external-partner-gets-its-own-segment). Do not plan on using it widely: conditions match a specific account ID, with no equivalent for an organization or an OU, so it is one rule per account.
+3. **Pin the exceptions to accounts.** For one or two genuinely sensitive segments, a `constant` rule keyed on `account` takes tags out of the decision altogether — see [An external partner gets its own segment](#account-conditions-with-association-method-constant-an-external-partner-gets-its-own-segment). Do not plan on using it widely: conditions match a specific account ID, with no equivalent for an organization or an OU, so it is one rule per account.
 
-## Attachment policies in practice
+## Attachment policy examples: association by tag, `attachment-type`, `account` and `region`
 
-### VPCs choose their own segment
+### Tag-based attachment policy: VPCs choose their own segment with `association-method: tag`
 
 ```json
 {
@@ -163,7 +168,7 @@ This applies to any rule that depends on tags, and we recommend three ways to ke
 
 Any VPC attachment tagged `domain` joins the segment its value names — `domain = production` lands in `production`. One rule serves every segment you ever declare, and onboarding a workload becomes a tag rather than a policy change. A VPC with no `domain` tag matches nothing and associates with nothing, which is the safe failure.
 
-### Hybrid connectivity always lands in one segment
+### `attachment-type` conditions: hybrid connectivity always lands in one segment
 
 ```json
 {
@@ -195,7 +200,7 @@ Any VPC attachment tagged `domain` joins the segment its value names — `domain
 
 Every hybrid attachment type goes to `hybrid`, with no tag involved — `or` is what lets one rule cover three types. Nothing is delegated here: the segment is fixed in the rule, so an attachment owner cannot place a VPN into `production` by tagging it.
 
-### An external partner gets its own segment
+### `account` conditions with `association-method: constant`: an external partner gets its own segment
 
 ```json
 {
@@ -220,7 +225,7 @@ Anything attached from that account lands in `external` whatever it is tagged, a
 
 This is the pattern for third parties needing layer 3 reachability — a SaaS provider, a partner, an acquisition not yet integrated. You cannot govern how they tag, so do not let tags decide: pin the destination with `constant`, key the rule on the account, and put the security you need around that one segment. Isolate it, share it only with what it must reach, or inspect traffic crossing into it. The rule number matters as much as the conditions: it has to sit ahead of any broader rule that could also match, or the partner's own tags still get a say in where it lands.
 
-### Inspection VPCs join a network function group
+### `add-to-network-function-group`: inspection VPCs join a network function group
 
 ```json
 {
@@ -242,7 +247,7 @@ This is the pattern for third parties needing layer 3 reachability — a SaaS pr
 
 An inspection VPC is still a `vpc`, so any broader rule matching that type would claim it and associate it to a segment — where it cannot be a service insertion target. The low rule number is doing the work, claiming the attachment before any segment rule gets to see it. The condition matches the tag's value and not just its key, so only an attachment tagged `inspection = true` joins the group.
 
-### One Region needs a human, the rest do not
+### `region` conditions with `require-acceptance`: one Region needs a human, the rest do not
 
 ```json
 {

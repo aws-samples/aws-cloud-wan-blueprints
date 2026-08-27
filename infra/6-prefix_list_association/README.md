@@ -1,3 +1,8 @@
+---
+title: "Associate a managed prefix list with a Cloud WAN core network so a routing policy can match its alias"
+description: "A deployable CloudFormation and Terraform pattern associating a managed prefix list with a core network, and the circular dependency it works around: the association needs the core network, the core network is created with a policy, and a policy naming an unresolved alias is rejected. Shows the two-document deployment that resolves it and the mirror-image problem on teardown."
+---
+
 # Infrastructure-as-Code Patterns — AWS Cloud WAN prefix list association
 
 In this pattern, we want to show how a managed prefix list is associated with a core network so a routing policy can match on its alias, and how to deploy that without hitting the circular dependency between the two.

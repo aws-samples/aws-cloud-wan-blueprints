@@ -1,3 +1,8 @@
+---
+title: "Share a Cloud WAN core network across AWS accounts with AWS RAM"
+description: "A deployable CloudFormation and Terraform pattern sharing a core network with another account, organizational unit or organization through AWS Resource Access Manager, so spoke accounts create their own attachments. Covers which attachment types a spoke account may create, why the share is made from us-east-1 while Cloud WAN's home region is us-west-2, and using require-attachment-acceptance when the spoke account sets the tag that picks the segment."
+---
+
 # Infrastructure-as-Code Patterns — AWS Cloud WAN shared across accounts
 
 In this pattern, we want to show how a core network is shared with other AWS accounts using AWS Resource Access Manager.

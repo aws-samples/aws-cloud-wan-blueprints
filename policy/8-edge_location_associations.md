@@ -1,3 +1,8 @@
+---
+title: "Cloud WAN edge location associations: applying routing policies between two Core Network Edges"
+description: "How the associate-routing-policy segment action applies routing policies to one AWS Cloud WAN segment's routes crossing a single Core Network Edge pair, shaping inter-Region propagation without touching an attachment or a segment share. Includes how direction is read from the first-named edge location."
+---
+
 # Edge location routing policy associations
 
 Use the [`associate-routing-policy`](https://docs.aws.amazon.com/network-manager/latest/cloudwan/cloudwan-policies-json.html#cloudwan-segment-actions-json) action to apply existing [routing policies](./7-routing_policies.md) to routes crossing one Core Network Edge (CNE) pair in one segment. This edge-pair scope shapes inter-Region propagation without changing an attachment or segment share. It requires policy [`version`](./1-core_network_version_configuration.md#version) `2025.11` or later.
