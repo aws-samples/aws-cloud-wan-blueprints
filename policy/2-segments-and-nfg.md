@@ -1,3 +1,8 @@
+---
+title: "Cloud WAN segments and network function groups: designing global routing domains"
+description: "How AWS Cloud WAN segments work as routing domains spanning every Region, when to set isolate-attachments, how to scope a segment to specific Regions or require attachment acceptance, and what the deny-filter and allow-filter guardrails protect. Includes which axis to segment your network on and how many segments is too many."
+---
+
 # Segments and network function groups
 
 A [**segment**](https://docs.aws.amazon.com/network-manager/latest/cloudwan/cloudwan-policies-json.html#cloudwan-segments-json-about) is a **routing domain that spans your whole network**: one route table that exists in every Region where you declared a Core Network Edge (CNE). Declare `production` once and it is present at every CNE, with cross-Region reachability inside it handled by the CNE mesh — no peerings, no static routes, nothing to keep in step.

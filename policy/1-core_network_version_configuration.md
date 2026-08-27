@@ -1,3 +1,8 @@
+---
+title: "Cloud WAN core network configuration: policy version, ASN ranges and edge locations"
+description: "How to choose the AWS Cloud WAN network policy version and what 2025.11 unlocks, how to size and pin the ASN ranges your Core Network Edges draw from, and how to declare edge locations. Also covers inside CIDR blocks for Connect attachments, VPN ECMP, DNS support and security group referencing."
+---
+
 # Core network policy version and core network configuration
 
 Before AWS Cloud WAN can route anything, it needs a presence in every AWS Region you operate in, and that presence needs a BGP identity. That is what this part of the policy decides. You name the Regions, and AWS Cloud WAN builds a **Core Network Edge (CNE)** in each one: a managed, highly available regional hub that your attachments connect to. Every CNE is automatically peered with every other and they exchange routes over [external BGP](https://aws.amazon.com/what-is/border-gateway-protocol/) (eBGP), so you never create a peering or write a route between Regions.

@@ -1,3 +1,8 @@
+---
+title: "Cloud WAN attachment routing policy rules: binding routing policies to attachments with labels"
+description: "How attachment-routing-policy-rules associate AWS Cloud WAN routing policies with attachments through a routing-policy label, what inbound and outbound mean at attachment scope, and how to limit a rule to specific Regions. Includes the cross-account ordering problem when the attachment owner cannot set its own label."
+---
+
 # Attachment routing policy rules
 
 The [`attachment-routing-policy-rules`](https://docs.aws.amazon.com/network-manager/latest/cloudwan/cloudwan-policies-json.html#cloudwan-attachment-routing-policy-rules-json) array associates existing [routing policies](./7-routing_policies.md) with attachments. The array is optional and requires policy [`version`](./1-core_network_version_configuration.md#version) `2025.11` or later. Every name in `associate-routing-policies` must be defined in [`routing-policies`](./7-routing_policies.md).

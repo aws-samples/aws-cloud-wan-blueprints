@@ -1,3 +1,8 @@
+---
+title: "Cloud WAN static routes: create-route and blackhole routes in a segment"
+description: "How the create-route segment action writes an explicit route or a blackhole into one AWS Cloud WAN segment's route table, why a static route never crosses a segment share, and why fewer destinations than Regions does not scope a route. Includes the two-pass deployment that naming attachment IDs forces, and why to reach for another capability first."
+---
+
 # Static routes
 
 A [`create-route`](https://docs.aws.amazon.com/network-manager/latest/cloudwan/cloudwan-policies-json.html#cloudwan-segment-actions-json) action writes a static route into one segment's route table. Everything else in a policy propagates routes that already exist somewhere; this is the one place you state a route outright, whatever the attachments advertise.
