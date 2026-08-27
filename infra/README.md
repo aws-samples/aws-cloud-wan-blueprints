@@ -1,3 +1,8 @@
+---
+title: "Deploy AWS Cloud WAN with CloudFormation or Terraform: the pattern catalog"
+description: "The deployable AWS Cloud WAN patterns in this repository, organised by which attachment types each one creates, with the prerequisites for each and how to choose between them. Includes how to point a pattern at a network policy of your own, what to edit to deploy into different Regions, and the tag contract that associates attachments to segments."
+---
+
 # Infrastructure as Code resources
 
 This section covers the resources you need to deploy an AWS Cloud WAN network. You only need two: a [global network and a core network](https://docs.aws.amazon.com/network-manager/latest/cloudwan/cloudwan-visualize-networks.html). The network policy is a **property of the core network**, not a resource of its own, and everything else you deploy is an **attachment**: VPCs, AWS Transit Gateways, Direct Connect gateways, Site-to-Site VPNs, or Connect attachments.
