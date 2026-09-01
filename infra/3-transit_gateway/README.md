@@ -1,6 +1,6 @@
 ---
 title: "Connect AWS Transit Gateway to Cloud WAN: peering and route table attachments"
-description: "A deployable CloudFormation and Terraform pattern peering a Transit Gateway in each Region with a Cloud WAN core network, then binding its route tables to segments — the coexistence and migration path for an existing Transit Gateway network. Shows how intra-Region separation comes from Transit Gateway route tables while cross-Region separation comes from Cloud WAN segments."
+description: "A deployable CloudFormation and Terraform pattern peering a Transit Gateway in each Region with a Cloud WAN core network, then binding its route tables to segments — the coexistence and migration path for an existing Transit Gateway network. Explains how routing works across the peering: dynamic BGP exchange, segmentation controlled by the route table attachments, which route-table-to-segment pairings exchange routes, and why two route tables of the same Transit Gateway never exchange routes through a segment."
 ---
 
 # Infrastructure-as-Code Patterns — AWS Cloud WAN with AWS Transit Gateway
@@ -63,6 +63,32 @@ Resulting reachability:
 | `prod` | `dev` (cross-Region) | Blocked | No sharing declared between the segments |
 
 Two layers are doing the work: separation within a Region comes from the Transit Gateway route tables, separation across Regions comes from the Cloud WAN segments.
+
+## How routing works between Transit Gateway and Cloud WAN
+
+### The peering is dynamic, and segmentation comes from policy-based routing
+
+**One peering per Region connects the Transit Gateway to the Core Network Edge, and routes are exchanged over it dynamically via BGP.** Nothing is configured statically — which is why the Transit Gateway ASNs must not overlap the core network's `asn-ranges`, as noted above. Segmentation across that single peering is policy-based routing: the peering carries a Transit Gateway policy table, and each `transit-gateway-route-table` attachment you create adds a rule to it that matches traffic by segment or routing domain and maps it to the target route table (see [Peerings in AWS Cloud WAN](https://docs.aws.amazon.com/network-manager/latest/cloudwan/cloudwan-peerings.html)).
+
+Creating the route table attachments *is* the segmentation control. The policy table's entries for the peering are system-managed and read-only, so you shape routing by choosing which route table attaches to which segment — not by editing rules.
+
+### Route table attachments extend a segment and a route table into each other
+
+**A `transit-gateway-route-table` attachment does not behave like a regular Transit Gateway attachment: there is no route table association or propagation to configure for it on the Transit Gateway side.** Instead, it extends the segment and the route table into each other. Routes that appear in the bound route table are dynamically advertised into the segment, and the segment's routes appear in the route table — only that route table's routes are exchanged, never the rest of the Transit Gateway's (see the [migration and interoperability patterns blog](https://aws.amazon.com/blogs/networking-and-content-delivery/aws-cloud-wan-and-aws-transit-gateway-migration-and-interoperability-patterns/)).
+
+### Which pairings work: many-to-many, with one exception
+
+Each route table attachment binds one route table to one segment, and nothing limits either side to a single pairing:
+
+| Pairing | Routes exchanged? |
+|---------|-------------------|
+| One route table attached to multiple segments | Yes |
+| One segment attached to route tables of different Transit Gateways | Yes |
+| One segment attached to two route tables of the **same** Transit Gateway | Between each route table and the segment, yes — but **not between the two route tables** |
+
+The exception in the last row is most likely standard BGP loop prevention: both route tables speak from the same Transit Gateway ASN, and a BGP speaker rejects any route whose AS_PATH already contains its own ASN — so when the segment advertises a Transit Gateway's own routes back to it, the Transit Gateway refuses them. The practical rule: reachability between two route tables of the same Transit Gateway is configured inside the Transit Gateway (associations, propagations, static routes), never through a segment.
+
+> **A blackhole route does not trim what the segment learns.** What the bound route table contains is what is advertised; a blackhole only drops traffic matching it in the route table where it sits. And because Transit Gateway [route evaluation](https://docs.aws.amazon.com/vpc/latest/tgw/how-transit-gateways-work.html) picks the most specific route first, an aggregate blackhole is beaten by more specific prefixes — in forwarding and in what gets advertised.
 
 ## Verifying it works
 
