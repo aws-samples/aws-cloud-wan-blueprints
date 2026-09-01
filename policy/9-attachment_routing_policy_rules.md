@@ -1,6 +1,6 @@
 ---
 title: "Cloud WAN attachment routing policy rules: binding routing policies to attachments with labels"
-description: "How attachment-routing-policy-rules associate AWS Cloud WAN routing policies with attachments through a routing-policy label, what inbound and outbound mean at attachment scope, and how to limit a rule to specific Regions. Includes the cross-account ordering problem when the attachment owner cannot set its own label."
+description: "How attachment-routing-policy-rules associate AWS Cloud WAN routing policies with attachments through a routing-policy label, what inbound and outbound mean at attachment scope, and how edge-locations scopes a rule so one Direct Connect gateway attachment carries different routing policies per CNE. Includes the cross-account ordering problem when the attachment owner cannot set its own label."
 ---
 
 # Attachment routing policy rules
@@ -36,9 +36,9 @@ Use `description` to state the routing treatment the rule assigns. It makes the 
 
 ## `conditions`
 
-`routing-policy-label` is the only condition type. Think of the label as an attachment's routing-treatment name: each attachment has one label, and the label determines which attachment-routing rule applies.
+`routing-policy-label` is the only condition type. Think of the label as an attachment's routing-treatment name: each attachment has one label, and the label determines which attachment-routing rules apply.
 
-A rule can accept one or more labels. Any listed label matches. Because an attachment has one label, attachments that need a different policy set need a different label and a separate rule.
+A rule can accept one or more labels. Any listed label matches. Because an attachment has one label, two attachments that need different treatment need different labels. One attachment can still be treated differently per Region, though: several rules may match the same label, and [`edge-locations`](#edge-locations) below decides where each applies.
 
 ```json
 {
@@ -86,7 +86,52 @@ The attachment rule selects **which attachments** receive the policies. In this 
 
 ## `edge-locations`
 
-`edge-locations` limits a matching rule's policy association to selected CNE Regions. It is useful for Direct Connect attachments, which can associate with multiple CNEs. Without the field, a matching policy applies at every CNE associated with the attachment; with it, the policy applies only at the listed Regions.
+`edge-locations` limits a matching rule's policy association to selected CNE Regions. It is useful for Direct Connect gateway attachments, which can associate with multiple CNEs. Without the field, a matching policy applies at every CNE associated with the attachment; with it, the policy applies only at the listed Regions.
+
+### Different routing policies per CNE on one attachment
+
+When several rules match the same label, each rule is honoured independently, at the Regions its own `edge-locations` names. That is what gives one attachment different routing treatment per CNE — and it matters most for the Direct Connect gateway attachment, the type that associates with multiple CNEs:
+
+```json
+[
+  {
+    "rule-number": 100,
+    "description": "N. Virginia: global filter plus AS_PATH prepend to de-prefer this Region's path to on-premises",
+    "edge-locations": ["us-east-1"],
+    "conditions": [
+      {
+        "type": "routing-policy-label",
+        "value": "dxAttachment"
+      }
+    ],
+    "action": {
+      "associate-routing-policies": ["filterDecommissionedRoutes", "depreferNVirginiaPath"]
+    }
+  },
+  {
+    "rule-number": 200,
+    "description": "Ireland: global filter only",
+    "edge-locations": ["eu-west-1"],
+    "conditions": [
+      {
+        "type": "routing-policy-label",
+        "value": "dxAttachment"
+      }
+    ],
+    "action": {
+      "associate-routing-policies": ["filterDecommissionedRoutes"]
+    }
+  }
+]
+```
+
+Both rules match the `dxAttachment` label, so both apply — each at the Regions it names. Rules do not merge: a rule associates exactly what its action lists, so a policy meant for every CNE is repeated in every action, as `filterDecommissionedRoutes` is here. `depreferNVirginiaPath` applies only at `us-east-1` — there it could, for example, prepend AS_PATH to the on-premises routes learned at that CNE, so traffic toward on-premises prefers the Ireland path with N. Virginia as failover.
+
+> **Labels distinguish attachments; `edge-locations` distinguishes Regions.** Only the Direct Connect gateway *needs* this — one attachment, one label, several CNEs. For single-Region types it is a convention choice: one stable label plus Region-scoped rules keeps regional variation in the policy document, instead of encoding Regions into labels and re-labeling live attachments when treatment changes. Two attachments in the same Region that need different treatment still need different labels.
+
+Two things complete the picture. Where a rule binds several policies at the same CNE — `us-east-1` above — their [`routing-policy-number`](./7-routing_policies.md#routing-policy-number-running-multiple-policies-on-the-same-resource) orders them, per CNE. And direction still belongs to each policy, not to the rule: both policies here happen to act inbound, on routes learned from the attachment — an outbound policy binds exactly the same way.
+
+> **A Region no rule covers gets no policies — silently.** Add a Region to the core network later and the Direct Connect gateway attachment extends there, but no rule names it, so routes at that CNE flow unfiltered and unmodified, with no error anywhere. Review the rule set whenever `edge-locations` change — in the policy document or on the attachment.
 
 ## Creation-time dependency
 

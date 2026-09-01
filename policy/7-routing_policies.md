@@ -421,7 +421,7 @@ This is commonly associated at the attachment scope — see [`9-attachment_routi
 
 A Direct Connect gateway attaches to every CNE. If every CNE advertises the same `10.0.0.0/8`, on-premises routers see equal-cost paths; traffic for a `eu-west-1` workload can enter through `us-east-1` and cross the backbone.
 
-Create one summarization policy per Region's supernet — for example, `summarizeNVirginiaIpv4Routes` for `10.10.0.0/16` and `summarizeIrelandIpv4Routes` for `10.0.0.0/16` — and scope each policy to its Region with [`edge-locations`](./9-attachment_routing_policy_rules.md#edge-locations). Each CNE then advertises only its Region's space, so on-premises traffic enters through the nearest Region.
+Create one summarization policy per Region's supernet — for example, `summarizeNVirginiaIpv4Routes` for `10.10.0.0/16` and `summarizeIrelandIpv4Routes` for `10.0.0.0/16` — and bind each to its Region with one `attachment-routing-policy-rules` entry per Region, matching the attachment's one label and scoped with `edge-locations` — see [Different routing policies per CNE on one attachment](./9-attachment_routing_policy_rules.md#different-routing-policies-per-cne-on-one-attachment). Each CNE then advertises only its Region's space, so on-premises traffic enters through the nearest Region.
 
 ### `prepend-asn-list`: AS_PATH prepending to prefer one Region's hybrid edge
 
