@@ -22,6 +22,7 @@ Match the request, then read what it points at — including the [`policy/`](./p
 | "Make this policy also do X" | [Troubleshooting and extending an existing policy](#7-troubleshooting-and-extending-an-existing-policy) | Generator |
 | "Where do I deploy this?" | [Choosing infrastructure](#5-choosing-infrastructure) | Generator |
 | "Explain segments / sharing / inspection / route filtering" | the matching page in [`policy/`](./policy/) | Knowledge — read the page and answer from it. It is authoritative for that array, for you as much as for the user |
+| "How does routing work between Transit Gateway and Cloud WAN?", "how can I segment my traffic between Transit Gateway and Cloud WAN?" | [How routing works between Transit Gateway and Cloud WAN](./infra/3-transit_gateway/README.md#how-routing-works-between-transit-gateway-and-cloud-wan) in [`infra/3-transit_gateway`](./infra/3-transit_gateway/) | Knowledge |
 
 Whatever the request, five rules always apply:
 
