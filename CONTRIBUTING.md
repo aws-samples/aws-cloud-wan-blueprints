@@ -6,7 +6,7 @@ Please read through this document before submitting any issues or pull requests 
 
 ## Repository conventions
 
-Every published pattern follows a single set of conventions covering naming, directory layout, dependency version pins, license headers, Cloud WAN network-policy authoring, and CloudFormation/Terraform parity. Before adding or modifying a pattern, read [CONVENTIONS.md](CONVENTIONS.md), it is the contract new patterns must follow. Pull requests are expected to conform to it.
+Every published pattern follows a single set of conventions covering naming, directory layout, dependency version pins, license headers, Cloud WAN network-policy authoring, and CloudFormation/Terraform parity. Before adding or modifying a pattern, a `policy/` capability page, or a `guidance/` scenario deep dive, read [CONVENTIONS.md](CONVENTIONS.md), it is the contract contributions must follow — including the admission test that decides whether a scenario qualifies for `guidance/` at all. Pull requests are expected to conform to it.
 
 ## Reporting bugs, feature requests, and generated-policy issues
 

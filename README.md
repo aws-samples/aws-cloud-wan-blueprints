@@ -35,12 +35,13 @@ AWS Cloud WAN Blueprints have been designed to be consumed in the following mann
 
 ## Structure
 
-A Cloud WAN design can combine routing domains, attachment types, segment sharing, inspection, route controls, Regions, and account boundaries — so the number of complete end-to-end architectures is effectively unbounded. A repository with one directory per architecture would always be incomplete, and hard to keep consistent as the service evolves. What *is* bounded is the set of **building blocks**, and what differentiates most designs is the **network policy** rather than the infrastructure underneath it. So the blueprints are organised as three composable layers:
+A Cloud WAN design can combine routing domains, attachment types, segment sharing, inspection, route controls, Regions, and account boundaries — so the number of complete end-to-end architectures is effectively unbounded. A repository with one directory per architecture would always be incomplete, and hard to keep consistent as the service evolves. What *is* bounded is the set of **building blocks**, and what differentiates most designs is the **core network policy** rather than the infrastructure underneath it. So the blueprints are organised as four composable layers:
 
 | Layer | Contains | Organised by |
 |-------|----------|--------------|
 | [`infra/`](./infra/) | **Deployable infrastructure** patterns, each shipping CloudFormation and Terraform plus a working baseline policy | Which **attachment types** it creates, plus multi-Account and prefix list association |
 | [`policy/`](./policy/) | **What a network policy can express**: capabilities, best practices, constraints, and composable snippets | The policy document's own top-level areas |
+| [`guidance/`](./guidance/) | **Scenario deep dives**: design reasoning for specific requirements that compose several policy capabilities at once | The scenario it answers, catalogued in [`guidance/README.md`](./guidance/README.md) |
 | [`SKILLS.md`](./SKILLS.md) | **Agent knowledge and workflow**: how to translate requirements into a complete policy and pick the infrastructure to test it | Knowledge first, then the generation procedure |
 
 Your end-to-end architecture is the combination: build the policy that expresses your requirements, then deploy it on the `infra/` pattern whose attachment types match what you need to connect.
@@ -132,7 +133,7 @@ AWS Cloud WAN Blueprints are maintained by AWS Solution Architects. This is not 
 
 **Q: I want a use case that is not in `infra/`. Where is it?**
 
-A: In [`policy/`](./policy/) — a use case is a policy document, and the same infrastructure serves many of them. Build the policy from the capability pages, then deploy it on the `infra/` pattern with the attachment types you need.
+A: In [`policy/`](./policy/) — a use case is a policy document, and the same infrastructure serves many of them. Build the policy from the capability pages, then deploy it on the `infra/` pattern with the attachment types you need. For scenarios whose design spans several capabilities at once, check the deep dives catalogued in [`guidance/`](./guidance/) first.
 
 The infrastructure patterns are building blocks, not finished answers: if your policy needs extra resources, adapt the closest pattern — that is expected. An AI agent with [`SKILLS.md`](./SKILLS.md) can help with both: assembling the policy and adapting the infrastructure to it (see [Generating a policy from your requirements](#generating-a-policy-from-your-requirements)).
 
