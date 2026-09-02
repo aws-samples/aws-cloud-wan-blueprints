@@ -15,8 +15,8 @@ Three checks:
                 deployable policies this repository ships) has the required shape: known
                 top-level keys, the mandatory core-network-configuration fields, and valid
                 enum values where a wrong one would be accepted as a string.
-  3. Snippets - every fenced ```json block in policy/*.md parses, so the documentation cannot
-                drift into invalid JSON.
+  3. Snippets - every fenced ```json block in policy/*.md and guidance/*.md parses, so the
+                documentation cannot drift into invalid JSON.
 
 Usage:
     python3 .github/scripts/check_policies.py
@@ -238,7 +238,8 @@ FENCE = re.compile(r"^```json\s*$")
 def check_snippets() -> bool:
     f = Findings()
     total = 0
-    for md in sorted((REPO_ROOT / "policy").glob("*.md")):
+    pages = [*(REPO_ROOT / "policy").glob("*.md"), *(REPO_ROOT / "guidance").glob("*.md")]
+    for md in sorted(pages):
         lines = md.read_text().splitlines()
         i = 0
         while i < len(lines):
@@ -257,7 +258,7 @@ def check_snippets() -> bool:
             else:
                 i += 1
     print(f"\n   ({total} inline snippet(s) checked)", end="")
-    return f.report("3. Inline JSON snippets in policy/*.md parse")
+    return f.report("3. Inline JSON snippets in policy/*.md and guidance/*.md parse")
 
 
 def main() -> int:

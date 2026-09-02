@@ -8,6 +8,8 @@
 
 - [ ] `infra/` — a deployable infrastructure pattern
 - [ ] `policy/` — a policy capability page or its snippets
+- [ ] `guidance/` — a **new** scenario deep-dive page
+- [ ] `guidance/` — an **update** to an existing deep-dive page
 - [ ] `SKILLS.md` — agent knowledge or generator logic
 
 ## Checklist for every change
@@ -33,6 +35,23 @@
 - [ ] The capability indexes agree: `policy/README.md` and the `SKILLS.md` capability-page and assembly-order tables both reflect this change.
 - [ ] Any new constraint or caveat is also reflected in `SKILLS.md` (*Constraints that bite* and the constraint checklist), with a link to the AWS documentation that states it.
 - [ ] Fenced JSON snippets parse (`python3 .github/scripts/check_policies.py`).
+
+## If the change adds a new `guidance/` page
+
+- [ ] The page passes the four-part admission test in [CONVENTIONS.md](../CONVENTIONS.md#guidance-ships-scenario-deep-dives-admitted-by-a-four-part-test): it answers a scenario question, composes two or more `policy/` capability pages (or knowledge outside the policy document), is not reducible to a constraint-checklist line, and links to mechanisms rather than restating them.
+- [ ] The page is exactly one file, started from `guidance/.template.md`, opening with the **Applies when / Composes / Test on** routing block; any diagrams are in `images/` prefixed `guidance_<page_name>_` with the editable source added to `images/architectures.drawio`.
+- [ ] The routing indexes are updated in this same change: the catalog row in `guidance/README.md` and the entry in `llms.txt`. Both describe the page in the requirement's vocabulary, and the catalog row's *Applies when* matches the page's own routing block.
+- [ ] `SKILLS.md` was **not** edited to reference the page — it routes through the catalog by design.
+- [ ] Examples remain composable snippets — no complete deployable policy documents — and fenced JSON parses (`python3 .github/scripts/check_policies.py`).
+
+## If the change updates an existing `guidance/` page
+
+- [ ] The page still satisfies the [admission test](../CONVENTIONS.md#guidance-ships-scenario-deep-dives-admitted-by-a-four-part-test): anything added is scenario reasoning, not a mechanism a `policy/` page owns or a rule that belongs in the `SKILLS.md` constraint checklist.
+- [ ] Facts still live in one place: new content links to the capability pages rather than restating what they own, and any new AWS-documented behaviour cites its source.
+- [ ] If the scope changed — the routing block's **Applies when**, **Composes**, or **Test on** — the catalog row in `guidance/README.md` and the `llms.txt` entry were updated to match.
+- [ ] If headings were renamed, added, or removed, every cross-reference still resolves (the lychee hook checks in-page anchors too), and no other page linked to a heading that no longer exists.
+- [ ] Still one file, snippets only, and fenced JSON parses (`python3 .github/scripts/check_policies.py`); any new or renamed diagram keeps the `images/guidance_<page_name>_` prefix with its source in `images/architectures.drawio`.
+- [ ] `SKILLS.md` was **not** edited to reference the page.
 
 ## If the change is in `SKILLS.md`
 
