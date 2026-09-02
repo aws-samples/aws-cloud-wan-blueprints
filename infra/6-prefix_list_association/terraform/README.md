@@ -57,12 +57,6 @@ Everything below is generated from the Terraform source by `terraform-docs`. Do 
 | <a name="requirement_terraform"></a> [terraform](#requirement\_terraform) | >= 1.3.0 |
 | <a name="requirement_aws"></a> [aws](#requirement\_aws) | >= 6.34.0 |
 
-## Providers
-
-| Name | Version |
-|------|---------|
-| <a name="provider_aws.awsoregon"></a> [aws.awsoregon](#provider\_aws.awsoregon) | >= 6.34.0 |
-
 ## Modules
 
 No modules.

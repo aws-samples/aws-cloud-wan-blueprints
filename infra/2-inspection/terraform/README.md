@@ -44,12 +44,6 @@ Everything below is generated from the Terraform source by `terraform-docs`. Do 
 | <a name="requirement_aws"></a> [aws](#requirement\_aws) | >= 6.34.0 |
 | <a name="requirement_awscc"></a> [awscc](#requirement\_awscc) | >= 1.67.0 |
 
-## Providers
-
-| Name | Version |
-|------|---------|
-| <a name="provider_awscc.awsccnvirginia"></a> [awscc.awsccnvirginia](#provider\_awscc.awsccnvirginia) | >= 1.67.0 |
-
 ## Modules
 
 | Name | Source | Version |
