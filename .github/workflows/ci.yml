@@ -25,7 +25,7 @@
 #   * policy            - Cloud WAN policy checks: generated CloudFormation
 #                         templates match suffix-paired baseline JSON documents,
 #                         policy documents are structurally valid, and inline JSON
-#                         snippets in policy/*.md parse.
+#                         snippets in policy/*.md and guidance/*.md parse.
 #   * markdown-links    - repository markdown link check (lychee).
 #   * checkov           - advisory IaC security scan using `.checkov.yaml`; uploads
 #                         JSON findings for the trusted PR-comment workflow.
@@ -345,7 +345,7 @@ jobs:
   #      baseline JSON, so a change to one cannot silently leave the other behind.
   #   2. Every infra/ baseline*.json - the only complete, deployable policies this
   #      repository ships - is structurally valid.
-  #   3. Every fenced ```json block in policy/*.md parses.
+  #   3. Every fenced ```json block in policy/*.md and guidance/*.md parses.
   #
   # It deliberately does NOT reimplement Cloud WAN's own validation. Anyone adapting a
   # blueprint should deploy it and read the errors Cloud WAN returns - those are

@@ -3,6 +3,17 @@
 formatter: markdown
 header-from: .header.md
 
+# The Providers section is deliberately omitted. terraform-docs sources it from
+# `.terraform/` when that directory exists, so it renders resolved versions
+# (`1.95.0`) on a machine that has run `terraform init` and version constraints
+# (`>= 1.67.0`) in CI, which checks out clean - generated READMEs would then drift
+# by environment rather than by content, and go stale on every provider release.
+# The Requirements section carries the constraints from `required_providers`, which
+# is the information a reader needs and is derived from the code either way.
+sections:
+  hide:
+    - providers
+
 settings:
   anchor: true
   color: true

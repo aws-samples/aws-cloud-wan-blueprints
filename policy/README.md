@@ -29,6 +29,8 @@ The JSON examples in these pages are **composable snippets**, not complete deplo
 
 This is intentional. A full policy would encode one topology's decisions and is not a template for every network. The snippets let you understand and compose the policy you need without inheriting assumptions from an unrelated example.
 
+Where a requirement needs several of these capabilities working together — and the reasoning that combines them is not on any single page — check the scenario deep dives catalogued in [`guidance/`](../guidance/) before assembling from scratch.
+
 For a guided workflow, use the [policy-generator capability in `SKILLS.md`](../SKILLS.md#building-a-policy). The capability is intended for use with an AI agent: the agent uses this directory as its knowledge base to translate requirements into Cloud WAN constructs, assemble a complete policy in dependency order, apply the constraint checklist, and select appropriate infrastructure and validation steps. You can follow the same workflow by hand, but the capability is optimized to automate those steps with an agent.
 
 ## Validating a policy

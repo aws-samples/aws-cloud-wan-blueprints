@@ -119,7 +119,7 @@ repos:
         description: >
           Generated CloudFormation templates match their suffix-paired baseline JSON,
           policy documents are structurally valid, and inline JSON snippets in
-          policy/*.md parse.
+          policy/*.md and guidance/*.md parse.
         entry: python3 .github/scripts/check_policies.py
         language: system
         pass_filenames: false
@@ -128,6 +128,7 @@ repos:
             infra/.*/baseline.*\.json
             |infra/.*/cloudformation/core_network.*\.yaml
             |policy/.*\.md
+            |guidance/.*\.md
             |\.github/scripts/check_policies\.py
           )$
   # ---------------------------------------------------------------------------

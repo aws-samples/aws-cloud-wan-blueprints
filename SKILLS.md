@@ -22,6 +22,7 @@ Match the request, then read what it points at — including the [`policy/`](./p
 | "Make this policy also do X" | [Troubleshooting and extending an existing policy](#7-troubleshooting-and-extending-an-existing-policy) | Generator |
 | "Where do I deploy this?" | [Choosing infrastructure](#5-choosing-infrastructure) | Generator |
 | "Explain segments / sharing / inspection / route filtering" | the matching page in [`policy/`](./policy/) | Knowledge — read the page and answer from it. It is authoritative for that array, for you as much as for the user |
+| "How do I achieve *this specific scenario*?" — a requirement whose answer spans several capabilities at once | the scenario catalog in [`guidance/README.md`](./guidance/README.md) | Knowledge — match the request against the catalog's *Applies when* column. A matching page is authoritative for that composition. This file deliberately does not list the pages; the catalog does |
 | "How does routing work between Transit Gateway and Cloud WAN?", "how can I segment my traffic between Transit Gateway and Cloud WAN?" | [How routing works between Transit Gateway and Cloud WAN](./infra/3-transit_gateway/README.md#how-routing-works-between-transit-gateway-and-cloud-wan) in [`infra/3-transit_gateway`](./infra/3-transit_gateway/) | Knowledge |
 
 Whatever the request, five rules always apply:
@@ -36,7 +37,7 @@ Whatever the request, five rules always apply:
 
 If you are editing this file, the test for where a new fact belongs is: **would this still be true if this repository did not exist?**
 
-- **Yes** → it is knowledge. It goes in part one, or in a [`policy/`](./policy/) capability page if it is about one array of the document.
+- **Yes** → it is knowledge. It goes in part one, in a [`policy/`](./policy/) capability page if it is about one array of the document, or in a [`guidance/`](./guidance/) page if it is scenario reasoning that spans several.
 - **No** → it is procedure. It goes in [Building a policy](#building-a-policy).
 
 That line is what stops the two halves slowly learning each other's content. Constraints are knowledge and live in [Constraints that bite](#constraints-that-bite); the [constraint checklist](#3-constraint-checklist) exists to give them a *checking order*, not to restate them.
@@ -207,13 +208,15 @@ A repeatable design workflow:
 
 # How to use this repository
 
-AWS Cloud WAN Blueprints separates two things, and understanding the split is most of what
-you need to navigate it:
+AWS Cloud WAN Blueprints separates deployable infrastructure from policy capability, and
+understanding that split is most of what you need to navigate it. A third tree holds what
+the split cannot: scenario deep dives that compose several capabilities at once.
 
 | Tree | Contains | Organised by |
 |------|----------|--------------|
 | [`infra/`](./infra/) | **Deployable infrastructure** | Which **attachment types** exist |
 | [`policy/`](./policy/) | **What a network policy can express** | The policy document's own top-level arrays |
+| [`guidance/`](./guidance/) | **Scenario deep dives** — design reasoning spanning several capabilities | The scenario, catalogued in [`guidance/README.md`](./guidance/README.md) |
 
 They are decoupled on purpose. Inspection does not care whether an attachment is a VPC or
 a VPN; route filtering does not care whether a prefix came from a VPC or a Transit Gateway.
@@ -248,9 +251,29 @@ because a real requirement is not drawn from a fixed set, and a library never ha
 combination the next user needs. Composing snippets into a full document is this
 capability's job, not a file's — that is what the rest of this section walks through.
 
+## `guidance/` — the scenario deep dives
+
+Where a requirement's answer is a **known composition of several capabilities** — or needs
+knowledge the policy document does not contain, such as BGP path selection or Direct
+Connect behavior — the reasoning lives in a [`guidance/`](./guidance/) page rather than on
+any single capability page.
+
+**This file deliberately does not enumerate the guidance pages.** The index is the catalog
+table in [`guidance/README.md`](./guidance/README.md): match the request against its
+*Applies when* column, which is written as trigger phrases in the user's vocabulary. New
+pages appear in that catalog (and in [`llms.txt`](./llms.txt)) without this file changing,
+so the catalog is always more current than anything a copy here could be.
+
+Consult the catalog at three moments: when the user asks "how do I achieve X" and X spans
+capabilities, **before assembling a policy** (see [step 2](#2-assembly-order)), and when a
+troubleshooting symptom is scenario-shaped rather than construct-shaped. A matching page is
+source material exactly like a capability page — read it and let it drive the steps it
+touches. If nothing matches, proceed from the capability pages alone; the catalog is small
+by design and most requirements do not need it.
+
 ## The attachment association contract
 
-This is the interface between the two trees. Patterns that create attachments use a common association contract where it fits, so a policy written from `policy/` can bind against any compatible pattern. Some patterns intentionally match by attachment type, and patterns that create no attachments only document the contract an added attachment must follow:
+This is the interface between [`policy/`](./policy/) and [`infra/`](./infra/). Patterns that create attachments use a common association contract where it fits, so a policy written from `policy/` can bind against any compatible pattern. Some patterns intentionally match by attachment type, and patterns that create no attachments only document the contract an added attachment must follow:
 
 | Tag | Applied to | Purpose |
 |-----|------------|---------|
@@ -295,9 +318,14 @@ Requires PyYAML (CI pins `6.0.2`) and does not contact AWS.
   staged dependency may add suffix-paired `baseline_<stage>.json` and
   `cloudformation/core_network_<stage>.yaml` documents. Terraform reads the JSON with
   `file()`; CloudFormation embeds the matching document, and CI compares each pair.
-- `policy/` contains inline, composable snippets only. If a correctly composed policy reveals
-  an undocumented interaction, update the relevant capability page and constraint checklist
-  rather than adding a complete example policy.
+- `policy/` and `guidance/` contain inline, composable snippets only. If a correctly
+  composed policy reveals an undocumented interaction, update the relevant capability page
+  and the constraint checklist; if the interaction needs cross-capability teaching rather
+  than a checklist line, it belongs in a `guidance/` page — never a complete example policy.
+- A new `guidance/` page is indexed in `guidance/README.md` and `llms.txt`, **never
+  enumerated in this file** — this file routes to guidance through the catalog precisely so
+  it does not change when pages are added. The admission test is in
+  [`CONVENTIONS.md`](./CONVENTIONS.md).
 - [`CONVENTIONS.md`](./CONVENTIONS.md) is the authoritative contract for how the repository
   is laid out and what a contribution must satisfy.
 
@@ -483,6 +511,14 @@ support, security-group referencing, ECMP — list them green-flagged against
 `core-network-configuration` so they are conscious choices rather than silent ones.
 
 ## 2. Assembly order
+
+**First, check the guidance catalog.** Match the translated requirement against the
+*Applies when* column of the catalog in [`guidance/README.md`](./guidance/README.md). If a
+page matches, read it before assembling: it is a known composition of several of the pages
+below, and it drives the steps it touches — the assembly order still runs, but that page
+decides what those arrays contain. If nothing matches, assemble from the capability pages
+alone. The catalog is the authoritative list of deep dives; this file deliberately does not
+duplicate it.
 
 Work through the pages in [`policy/`](./policy/) in this order, and **read each page before
 you emit the array it produces**. The order is not arbitrary — each part references the ones
@@ -777,7 +813,10 @@ improves.
 Users will also bring you a policy they already have, in one of two shapes: **"why is this
 not working?"** and **"how can this policy also do X?"**. Both start the same way: read the
 document they sent before answering anything, and ask for the intent in their own words —
-you cannot diagnose or extend a policy against an intent you are guessing at.
+you cannot diagnose or extend a policy against an intent you are guessing at. Then check
+the catalog in [`guidance/README.md`](./guidance/README.md): a symptom or an X that spans
+several capabilities may already have a deep dive, and a matching page is source material
+for the diagnosis or the delta exactly as it is for a fresh build.
 
 ### "Why is this not working?"
 

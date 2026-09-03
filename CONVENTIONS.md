@@ -67,6 +67,11 @@ policy/                          # flat, one document per policy-document area
 ├── README.md                    # index, composition guidance, validation workflow
 └── 1..9-*.md                    # the capability documents
 
+guidance/                        # flat, one deep dive per cross-capability scenario
+├── README.md                    # the scenario catalog - the index agents and readers route by
+├── .template.md                 # the skeleton a new guidance page starts from
+└── *.md                         # the scenario pages - see section 6
+
 .github/scripts/                 # check_policies.py - CI pre-merge policy checks
 images/                          # architecture diagrams + editable sources
 llms.txt                         # annotated index of the repository, written for an AI agent
@@ -81,6 +86,7 @@ Rules:
 - Every baseline declares exactly **two Core Network Edge locations**, `us-east-1` and `eu-west-1`, so the examples expose cross-Region behavior. The resources a pattern manages do not necessarily live in both edge Regions: [`infra/README.md`](infra/README.md#regions) records their actual locations and explains the exceptions for `5-multi_account` and `6-prefix_list_association`.
 - The `terraform/README.md` is **generated** from `.header.md` plus the module's inputs and outputs. Edit `.header.md`, then regenerate — never edit the README by hand. Config: `.config/.terraform-docs.yaml`.
 - `policy/` is flat: one markdown file per area of the policy document, no subdirectories.
+- `guidance/` is flat, and its pages are **not numbered**: `policy/` is numbered because it has an assembly order, and guidance pages have none — numbering them would falsely imply one. File names are descriptive scenario names, lowercase with underscores (e.g. `dx_geographic_egress.md`). What qualifies as a guidance page is defined in [Network-policy authoring](#6-network-policy-authoring).
 
 ### Catalog and agent-index synchronization
 
@@ -88,6 +94,7 @@ The repository exposes the same structure to human readers and AI agents. Keep t
 
 - When a pattern is added, removed, or renamed, update the catalogs in [`README.md`](README.md), [`infra/README.md`](infra/README.md), [Choosing infrastructure](SKILLS.md#5-choosing-infrastructure), and [`llms.txt`](llms.txt).
 - When a policy capability page is added, removed, or renamed, update [`README.md`](README.md), [`policy/README.md`](policy/README.md), the [`SKILLS.md`](SKILLS.md#policy--the-capability-pages) capability table, the [assembly order](SKILLS.md#2-assembly-order), [`llms.txt`](llms.txt), and any affected constraint-checklist entries.
+- When a guidance page is added, removed, or renamed, update the catalog table in [`guidance/README.md`](guidance/README.md) and [`llms.txt`](llms.txt). **`SKILLS.md` is deliberately not on this list**: it routes to guidance through the catalog, not by enumerating pages, so adding a guidance page must never require a `SKILLS.md` edit. A change that would force one is a sign the page is enumerated somewhere it should not be.
 
 [`llms.txt`](llms.txt) is the agent-facing index: an annotated list of every `policy/` page and every `infra/` pattern, each line saying which question that resource answers. It is not a summary of the repository's content and must not become one — it is a routing table, and its only job is to stop an agent guessing at structure it can be told. It **must list every page and every pattern**, so a page or pattern that is not in it is a bug. Its links are relative, and there is deliberately no `llms-full.txt`.
 
@@ -112,7 +119,7 @@ Rules:
 
 ### Front matter on guidance pages
 
-Every `policy/` page and every tier 1 and tier 2 `infra/` README opens with YAML front matter carrying exactly two keys, `title` and `description`, followed by a blank line and then the `#` heading:
+Every `policy/` page, every `guidance/` page, and every tier 1 and tier 2 `infra/` README opens with YAML front matter carrying exactly two keys, `title` and `description`, followed by a blank line and then the `#` heading:
 
 ```markdown
 ---
@@ -223,7 +230,7 @@ In the normal layout, an `infra/` pattern's `baseline.json` is the **single sour
 
   Never hand-edit generated core-network policy templates. CI fails if a template drifts from its paired JSON document.
 
-Every policy — the `infra/` baselines, and the inline snippets in `policy/*.md` — must pass the pre-merge checks:
+Every policy — the `infra/` baselines, and the inline snippets in `policy/*.md` and `guidance/*.md` — must pass the pre-merge checks:
 
 ```bash
 python3 .github/scripts/check_policies.py
@@ -238,7 +245,28 @@ A **snippet** is a fragment — one array element, or one array — illustrative
 - A user's real requirement is not one of a fixed set. Composing a use case out of the capabilities on these pages, in the order [`SKILLS.md`](SKILLS.md) lays out, is what scales — a library of example policies does not, because there is always a combination of segments, sharing, service insertion and routing policies that the library does not have and never will.
 - The generator capability in [`SKILLS.md`](SKILLS.md) is what turns a use case into a full document: it is the logic that assembles snippets in the right order, checks the constraints that bite, and hands back a validated policy. **That is where end-to-end policy composition lives** — not in a static file checked into this directory.
 
-This was tried the other way once — a `policy/examples/` directory of complete deployable documents, admissible only when a snippet could not convey the interaction — and it was removed. The bar sounded principled but did not hold up: `check_policies.py` never deploys anything (CI is entirely static, see section 9), so "deployable" only ever meant a document a human deployed once and then checked into the repository as a claim nobody re-verifies. That is a weak guarantee for a policy that looks increasingly like curated content rather than composable teaching. If a genuinely undocumented interaction turns up — something a correctly-composed snippet still gets wrong — track it as an issue rather than a file; the fix belongs in the constraint checklist in [`SKILLS.md`](SKILLS.md#3-constraint-checklist), which is what feeds every future policy the generator builds, not in a document only that one interaction benefits from.
+If a genuinely undocumented interaction turns up — something a correctly-composed snippet still gets wrong — the fix has two homes, and neither is a complete policy document. If it reduces to a rule ("don't do X because Y"), it belongs in the constraint checklist in [`SKILLS.md`](SKILLS.md#3-constraint-checklist), which feeds every future policy the generator builds. If it needs teaching — design reasoning that spans capabilities — it belongs in a [`guidance/`](guidance/) page, defined next.
+
+### `guidance/` ships scenario deep dives, admitted by a four-part test
+
+A guidance page answers a **scenario** question — "how do I achieve X" — whose answer is design reasoning across capabilities, not the behavior of any one policy construct. The shape that qualifies is a requirement satisfied only by several policy areas acting together, usually with knowledge the policy document does not contain — how BGP selects a path, what the far side of a hybrid connection advertises, why a return path has to be symmetric. Such an answer has nowhere to live in the existing trees: `policy/` is one page per JSON area, so putting it on any one of them breaks that mapping and buries reasoning the other pages equally need, while `infra/` is defined by attachment types and cannot hold a design at all.
+
+The directory's failure mode is unbounded growth into a use-case library, which this repository deliberately rejects. So admission is strict: a guidance page is admissible **only if all four criteria hold**.
+
+1. **It answers a scenario question, not a mechanism question.** If the answer is about one JSON construct, it is a section on that construct's `policy/` page, full stop.
+2. **The answer composes two or more `policy/` capability pages, or requires knowledge outside the policy document** (BGP path selection, Direct Connect physics, traffic symmetry reasoning). A single-page composition does not qualify.
+3. **It cannot be reduced to a constraint-checklist line.** If "don't do X because Y" captures it, it goes in the [`SKILLS.md` checklist](SKILLS.md#3-constraint-checklist) instead.
+4. **It teaches reasoning, and links to mechanisms rather than restating them.** The documentation-tier rule extends here: each fact still lives in exactly one place. A guidance page may say *why* this scenario picks `outbound` over `inbound` and link to [`7-routing_policies.md`](policy/7-routing_policies.md) for what those mean; it never re-explains a capability.
+
+Rules a guidance page follows:
+
+- **Snippets only, exactly as `policy/`.** No complete deployable policy documents, and every fenced JSON block must pass `check_policies.py`. This is the line that separates a guidance page from a use-case library.
+- **A guidance page is exactly one file.** No per-page subfolders, and no sibling assets in `guidance/`: a second markdown file or a checked-in `.json` next to a page is the use-case library coming back through a side door. If a scenario cannot fit one page plus images, it has outgrown guidance — re-check the admission test.
+- **Images live in [`images/`](images/), prefixed with the page's file name** (`guidance_<page_name>_*.png`), with the editable source added to `images/architectures.drawio` like every other diagram in the repository. The prefix is what keeps a page's assets findable when the page is renamed or removed.
+- **Every page opens with a routing block** immediately after the `#` heading — a small table with three rows: **Applies when** (the symptoms and requirements that trigger the page, in the user's vocabulary, not Cloud WAN nouns), **Composes** (links to the `policy/` pages it builds on), and **Test on** (the `infra/` pattern that can exercise it). The *Applies when* row is what the [`guidance/README.md`](guidance/README.md) catalog and an AI agent route by, so write it as trigger phrases a request can be matched against.
+- **Start from [`guidance/.template.md`](guidance/.template.md)**, which carries the required structure.
+- Front matter, [heading rules](#headings-name-the-mechanism-not-only-the-scenario), and the no-hard-wrap rule apply exactly as they do to `policy/` pages.
+- **Index synchronization**: a new page lands in the [`guidance/README.md`](guidance/README.md) catalog and [`llms.txt`](llms.txt) in the same change — and never in `SKILLS.md`, per [Catalog and agent-index synchronization](#catalog-and-agent-index-synchronization).
 
 ### Headings name the mechanism, not only the scenario
 
