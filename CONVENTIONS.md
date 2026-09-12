@@ -279,7 +279,7 @@ So when a section demonstrates a use case, its heading states **both** the mecha
 | | |
 |---|---|
 | Not | `### An external partner gets its own segment` |
-| But | `### account conditions with association-method constant: an external partner gets its own segment` |
+| But | `### account-id conditions with association-method constant: an external partner gets its own segment` |
 
 The scenario half keeps the heading readable in a table of contents; the mechanism half is what a scanning reader is looking for. A heading carrying only the scenario describes the section to someone who is already reading it, which is the one reader who does not need the help.
 
