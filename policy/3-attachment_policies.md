@@ -1,6 +1,6 @@
 ---
 title: "Cloud WAN attachment policies: automatic attachment association by tag, attachment type, account or Region"
-description: "How AWS Cloud WAN attachment policies map each attachment to a segment or network function group automatically, so a workload team onboards without a central ticket. Covers every match condition — tag-exists, tag-value, attachment-type, account, region and resource-id — first-match-wins rule ordering, association-method constant versus tag, add-to-network-function-group for inspection VPCs, require-acceptance, and who controls the tags in a shared core network."
+description: "How AWS Cloud WAN attachment policies map each attachment to a segment or network function group automatically, so a workload team onboards without a central ticket. Covers every match condition — tag-exists, tag-value, attachment-type, account-id, region and resource-id — first-match-wins rule ordering, association-method constant versus tag, add-to-network-function-group for inspection VPCs, require-acceptance, and who controls the tags in a shared core network."
 ---
 
 # Attachment policies
@@ -42,7 +42,7 @@ A description costs nothing. Rules get read most closely when something has not 
 |------|-----------|-----------|---------------|
 | `any` | Anything. Used for a deliberate catch-all | — | Segment |
 | `attachment-type` | `vpc`, `site-to-site-vpn`, `connect`, `direct-connect-gateway`, `transit-gateway-route-table` | `equals`, `not-equals`, `contains`, `begins-with` | Segment |
-| `account` | The AWS account that created the attachment | same | Segment |
+| `account-id` | The AWS account that created the attachment | same | Segment |
 | `region` | The Region the attachment is in | same | Segment |
 | `resource-id` | The resource behind it, such as a VPC ID | same | Segment |
 | `tag-exists` | A tag key is present, whatever its value | — (takes `key`) | Segment, network function group |
@@ -138,9 +138,9 @@ This applies to any rule that depends on tags, and we recommend three ways to ke
 
 1. **Govern the tags themselves.** Use [service control policies](https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_policies_scps.html) in AWS Organizations to control who may set the tag keys your rules match on. Match on a tag a spoke account cannot change and the exposure goes away. It is the only option that removes the problem rather than compensating for it, and the network stays automatic.
 2. **Require acceptance.** Either on the segment, or per rule with `require-acceptance`. Effective, but it puts a manual step into an otherwise dynamic network, so prefer it where a human decision is genuinely wanted.
-3. **Pin the exceptions to accounts.** For one or two genuinely sensitive segments, a `constant` rule keyed on `account` takes tags out of the decision altogether — see [An external partner gets its own segment](#account-conditions-with-association-method-constant-an-external-partner-gets-its-own-segment). Do not plan on using it widely: conditions match a specific account ID, with no equivalent for an organization or an OU, so it is one rule per account.
+3. **Pin the exceptions to accounts.** For one or two genuinely sensitive segments, a `constant` rule keyed on `account-id` takes tags out of the decision altogether — see [An external partner gets its own segment](#account-id-conditions-with-association-method-constant-an-external-partner-gets-its-own-segment). Do not plan on using it widely: conditions match a specific account ID, with no equivalent for an organization or an OU, so it is one rule per account.
 
-## Attachment policy examples: association by tag, `attachment-type`, `account` and `region`
+## Attachment policy examples: association by tag, `attachment-type`, `account-id` and `region`
 
 ### Tag-based attachment policy: VPCs choose their own segment with `association-method: tag`
 
@@ -200,7 +200,7 @@ Any VPC attachment tagged `domain` joins the segment its value names — `domain
 
 Every hybrid attachment type goes to `hybrid`, with no tag involved — `or` is what lets one rule cover three types. Nothing is delegated here: the segment is fixed in the rule, so an attachment owner cannot place a VPN into `production` by tagging it.
 
-### `account` conditions with `association-method: constant`: an external partner gets its own segment
+### `account-id` conditions with `association-method: constant`: an external partner gets its own segment
 
 ```json
 {
@@ -208,7 +208,7 @@ Every hybrid attachment type goes to `hybrid`, with no tag involved — `or` is 
   "condition-logic": "or",
   "conditions": [
     {
-      "type": "account",
+      "type": "account-id",
       "operator": "equals",
       "value": "111122223333"
     }
