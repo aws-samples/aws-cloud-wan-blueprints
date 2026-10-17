@@ -122,4 +122,4 @@ Rows one and four act on the same flow, as do rows two and three: swapping the t
 Two ordering facts complete the picture:
 
 1. Share policies are applied after attachment policies, so an attachment associates first and only then does sharing decide what it reaches.
-2. Segments carry their own [`deny-filter` and `allow-filter`](./2-segments-and-nfg.md#deny-filter-and-allow-filter) guardrails, evaluated after every share — those bound which segments may exchange routes at all, where routing policies work a level down, on the prefixes.
+2. Segments carry their own [`deny-filter` and `allow-filter`](./2-segments-and-nfg.md#deny-filter-and-allow-filter) guardrails, evaluated after every share — each bounds, per direction, which routes the segment carrying it will accept, where routing policies work a level down, on the prefixes.

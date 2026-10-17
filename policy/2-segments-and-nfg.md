@@ -123,10 +123,12 @@ A pending attachment cannot reach the core network, and in a shared core network
 
 Two guardrails on how routes exchange between segments, evaluated **after** every [`share`](./4-segment_sharing.md) action and every [`send-via`](./5-service_insertion.md) that opens reachability between two segments.
 
-Sharing is bidirectional — a share lets attachments in both segments reach each other — which is easy to reason about while a policy is small. Real ones grow long and may be edited by several people, so eventually a `share` lands where it should not and two segments that were never meant to talk can reach each other. These filters sit on the segment rather than in a share statement, so the boundary holds whatever gets added later.
+Sharing is bidirectional — a share lets attachments in both segments reach each other — and that is easy to reason about while a policy is small. Larger ones grow and get edited by several hands, so sooner or later a `share` opens a path between two segments that were never meant to talk. A `deny-filter` or `allow-filter` sits on the segment itself, not in any share statement, so the boundary holds however the share actions change around it.
 
-* **`deny-filter`**: segments this one will never exchange routes with. A `share` or `send-via` naming them does nothing.
-* **`allow-filter`**: the only segments this one may exchange routes with. A `share` or `send-via` naming anything else does nothing, and a listed segment still needs a `share` or `send-via` before routes flow.
+A filter is **per direction**: the segment carrying it controls which routes it *accepts*, not which it hands out. So a filter on only one of two shared segments is one-directional — it stops that segment learning the other's routes, but its own prefixes still flow out. To close both directions, filter both segments or remove the share.
+
+* **`deny-filter`**: segments whose routes this one refuses. A `share` or `send-via` naming them stops routes coming *in* from them; this segment's own routes still flow *out* to them unless they filter back.
+* **`allow-filter`**: the only segments whose routes this one accepts. A `share` or `send-via` naming anything else brings no routes *in*; a listed segment still needs a `share` or `send-via` before routes flow, and this segment's routes still flow *out* to a shared segment regardless of its own allow-filter.
 
 ```json
 {
@@ -137,7 +139,7 @@ Sharing is bidirectional — a share lets attachments in both segments reach eac
 }
 ```
 
-In the example above, `payments` will never exchange routes with `development` however many share actions are configured, and `video-producer` will only ever exchange routes with `video-distributor` (still the share action is needed). **Use one or the other on a segment, never both**.
+In the example above, `payments` never learns `development`'s routes however many share actions are configured — but with the filter on `payments` alone, `development` still learns `payments`' routes if a share names them. For a boundary that holds both ways, filter both segments. `video-producer` only ever accepts routes from `video-distributor` (and a share is still needed before routes flow). **Use one or the other on a segment, never both**.
 
 > **Treat the policy as code and you may not need these at all.** A document that only changes through review — pull request, diff, a CI check — catches a stray `share` before it deploys, which keeps the policy simpler than encoding the same boundary in two places. Reach for a filter where the boundary matters too much to depend on someone reading the diff.
 

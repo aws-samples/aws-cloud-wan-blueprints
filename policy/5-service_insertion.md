@@ -124,7 +124,7 @@ Whether `when-sent-to` includes the source segment itself determines whether iso
 - **Intra-segment** (`"*"`, `segment`'s own name in the list, or `when-sent-to` omitted entirely): requires [`isolate-attachments: true`](./2-segments-and-nfg.md#isolate-attachments) on the source segment. Without it, the policy version is **rejected at validation** and never becomes LIVE — the segment's route table would otherwise hold a direct route between attachments that bypasses the NFG.
 - **Inter-segment only** (lists segments other than the source): no isolation needed. There is no direct route between segments to begin with, so there is nothing to bypass.
 
-A `send-via` that opens reachability between two segments is gated by their [`allow-filter` / `deny-filter`](./2-segments-and-nfg.md#deny-filter-and-allow-filter), exactly as a `share` is: the inspected path appears only where each segment's filter accepts the other. If a filter excludes the other segment, the action stays in the policy but the routes never appear.
+A `send-via` that opens reachability between two segments is gated by their [`allow-filter` / `deny-filter`](./2-segments-and-nfg.md#deny-filter-and-allow-filter), exactly as a `share` is, and each filter is checked per direction against the segment that carries it. An inspected path needs routes to flow both ways, so a filter on either segment that excludes the other breaks reachability through the NFG — but it only blocks the direction into the filtering segment; the other segment can still learn this one's routes. The action stays in the policy either way.
 
 ### `via`
 
