@@ -41,15 +41,14 @@ A description costs nothing. Rules get read most closely when something has not 
 | Type | Matches on | Operators | Associates to |
 |------|-----------|-----------|---------------|
 | `any` | Anything. Used for a deliberate catch-all | — | Segment |
-| `attachment-type` | `vpc`, `site-to-site-vpn`, `connect`, `direct-connect-gateway`, `transit-gateway-route-table` | `equals`, `not-equals`, `contains`, `begins-with` | Segment |
-| `account-id` | The AWS account that created the attachment | same | Segment |
+| `attachment-type` | `vpc`, `site-to-site-vpn`, `connect`, `direct-connect-gateway`, `transit-gateway-route-table` | `equals` only | Segment |
+| `account-id` | The AWS account that created the attachment | `equals`, `not-equals`, `contains`, `begins-with` | Segment |
 | `region` | The Region the attachment is in | same | Segment |
 | `resource-id` | The resource behind it, such as a VPC ID | same | Segment |
 | `tag-exists` | A tag key is present, whatever its value | — (takes `key`) | Segment, network function group |
-| `tag-name` | Also key presence, without evaluating the value | — | Segment, network function group |
 | `tag-value` | A tag key and its value | `equals`, `not-equals`, `contains`, `begins-with` | Segment, network function group |
 
-Only the tag conditions reach a network function group, and those rules are constrained further: [`condition-logic` must be `and`](https://docs.aws.amazon.com/network-manager/latest/cloudwan/cloudwan-policy-attachments.html) even where there is a single condition, and every condition must be tag-based. The AWS documentation is inconsistent on how many: one page asks for `tag-exists` alongside a `tag-name` or `tag-value` condition, another gives those two as the only supported types. Their own examples use a single tag condition, so start there and add `tag-exists` if policy generation objects. Segment rules carry no such restriction.
+Network function group rules take only `tag-exists` and `tag-value` conditions. A single tag condition is enough. Segment rules carry no such restriction.
 
 ```json
 {
