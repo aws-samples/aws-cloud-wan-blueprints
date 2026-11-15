@@ -67,7 +67,7 @@ repos:
   # ---------------------------------------------------------------------------
   # cfn-lint (official AWS CloudFormation linter hook).
   #
-  # Pinned to v1.54.0 to stay in lockstep with CI (`pip install cfn-lint==1.54.0`).
+  # Pinned to v1.60.1 to stay in lockstep with CI (`pip install cfn-lint==1.60.1`).
   # Scoped to CloudFormation templates only.
   #
   # This check was previously disabled in this repository with the note
@@ -78,7 +78,7 @@ repos:
   # templates use, so the check is re-enabled here.
   # ---------------------------------------------------------------------------
   - repo: https://github.com/aws-cloudformation/cfn-lint
-    rev: v1.54.0
+    rev: v1.60.1
     hooks:
       - id: cfn-lint
         files: ^infra/.*/cloudformation/.*\.(yaml|yml)$

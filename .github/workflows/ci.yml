@@ -279,7 +279,7 @@ jobs:
 
       - name: Install cfn-lint
         shell: bash
-        run: pip install "cfn-lint==1.54.0"
+        run: pip install "cfn-lint==1.60.1"
 
       - name: cfn-lint ${{ matrix.file }}
         shell: bash

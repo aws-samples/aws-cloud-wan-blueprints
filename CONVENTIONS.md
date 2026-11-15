@@ -333,7 +333,7 @@ Rules of thumb:
 | Terraform formatting | `fmt` | `terraform_fmt` | Terraform `1.9.8` | yes |
 | Terraform validate | `terraform-checks` | `terraform_validate` | Terraform `1.9.8` | yes |
 | Terraform lint | `tflint` | `terraform_tflint` | tflint `v0.61.0`, AWS ruleset `0.42.0` | yes |
-| CloudFormation lint | `cfn-lint` | `cfn-lint` | cfn-lint `1.54.0` | yes |
+| CloudFormation lint | `cfn-lint` | `cfn-lint` | cfn-lint `1.60.1` | yes |
 | Generated README drift | `terraform-docs` | `terraform_docs` | terraform-docs `v0.21.0` | yes |
 | Policy checks (baseline structure, snippets, generated CFN drift) | `policy` | `check-policies` | repo script; PyYAML `6.0.2` | yes |
 | Markdown links | `markdown-links` | `lychee` (local hook) | CI action `v2`; local host binary | yes |
