@@ -158,7 +158,7 @@ Most Cloud WAN designs go wrong on these specifics rather than on the architectu
 
 - Cloud WAN's control plane / home Region is **us-west-2**; the console lives under AWS Network Manager.
 - Bandwidth is a property of the **attachment**, not of the CNE, and for VPC attachments it is per Availability Zone. Scale a Region by adding or resizing attachments, not by adding CNEs; aggregate across VPN tunnels or Connect peers with ECMP. Check the [quotas page](https://docs.aws.amazon.com/network-manager/latest/cloudwan/cloudwan-quotas.html) for current figures before assuming headroom, and never quote them from memory.
-- Cloud WAN does **not** solve overlapping CIDRs. It is IP routing; addresses must be unique. (If overlapping CIDRs are the actual requirement, the answer is VPC Lattice or PrivateLink, not Cloud WAN.)
+- Cloud WAN does **not** solve overlapping CIDRs. It is IP routing; addresses must be unique, and unique addressing is the design to aim for. Where a network cannot be renumbered (an acquired or partner network), [1:1 NAT](https://docs.aws.amazon.com/network-manager/latest/cloudwan/cloudwan-nat.html) configured **on the attachment, not in the policy**, can translate one side into a unique range — an exception, not a substitute for an addressing plan. It is not supported on `transit-gateway-route-table` attachments or on a VPC attachment with appliance mode. If the need is service-level rather than network-level, VPC Lattice or PrivateLink avoid the overlap altogether.
 
 ---
 
@@ -183,7 +183,7 @@ When the trigger exists, the path is incremental, not a cutover: peer the existi
 
 Prefer a different tool when the requirement is not network-level IP connectivity:
 
-- **Overlapping CIDRs, or service-level rather than network-level connectivity** → **Amazon VPC Lattice** (service-to-service, identity-based auth, CIDRs may overlap) or **PrivateLink** (one-way exposure of a single endpoint). Cloud WAN is IP routing and cannot express either.
+- **Overlapping CIDRs, or service-level rather than network-level connectivity** → **Amazon VPC Lattice** (service-to-service, identity-based auth, CIDRs may overlap) or **PrivateLink** (one-way exposure of a single endpoint). Cloud WAN is IP routing and cannot express either; 1:1 NAT is the exception for a network that cannot be renumbered (see [Constraints that bite](#constraints-that-bite)).
 - **Two VPCs, lowest possible cost and complexity, no growth expected** → **VPC peering**.
 - Remember these are **complementary layers, not competing alternatives**: a mature network runs Cloud WAN as the backbone with Lattice, PrivateLink, and targeted peering on top. Do not frame the choice as either/or when the user's requirements span layers.
 
@@ -320,8 +320,10 @@ Flag **sections**, not the document: name the policy part next to each flag (`se
 
 - [Crucial] Do any of the networks being connected have overlapping IP ranges — or might
   they in the future? Cloud WAN is IP routing and addresses must be unique. If overlap is
-  fundamental to the requirement, stop: the answer is VPC Lattice or PrivateLink, not a
-  Cloud WAN policy.
+  fundamental to the requirement, the answer is VPC Lattice or PrivateLink, not a Cloud
+  WAN policy. Only where a network cannot be renumbered and must connect at the network
+  layer, propose 1:1 NAT on its attachment as the exception, and flag it as a residual
+  step: it is configured on the attachment, not in the policy.
 - [Important] IPv4-only or dual-stack? Default: recommend configuring IPv6 alongside IPv4
   from the start — retrofitting it into a live policy is far more disruptive than
   including it now.
@@ -544,6 +546,9 @@ misbehave, which is why they are worth a second pass.
 - [ ] Prefix lists referenced by a routing policy are [created in the Cloud WAN home Region,
       `us-west-2`](https://docs.aws.amazon.com/network-manager/latest/cloudwan/cloudwan-prefix-lists.html), wherever the edge locations are, **and associated with the
       core network before the policy that names the alias is applied**
+- [ ] Every 1:1 NAT CIDR from a VPC rule that does not exactly match a VPC CIDR has a
+      [static route](./policy/6-static_routes.md#destination-cidr-blocks)
+      in every segment that must reach it, since a static route never crosses a share
 - [ ] Every tag the target infrastructure applies is matched by an attachment policy, and the
       `edge-locations` match the Regions it deploys into. Get either wrong and attachments
       reach `AVAILABLE` and never associate — the most common way a valid policy moves no
@@ -796,9 +801,10 @@ Treat it as a delta through the same pipeline, not a rewrite:
 4. Hand back a **minimal diff** with the affected sections named, the flag report for
    anything assumed, and the recommendation to validate through [step 4](#4-validate).
 
-If X is not expressible in a network policy — overlapping CIDRs, service-level access
-control, a routing policy on an inspection flow — say so plainly and point at what can
-express it, rather than bending the policy toward something it cannot do.
+If X is not expressible in a network policy — overlapping CIDRs (1:1 NAT lives on the
+attachment), service-level access control, a routing policy on an inspection flow — say so
+plainly and point at what can express it, rather than bending the policy toward something it
+cannot do.
 
 ## Worked example
 
@@ -869,7 +875,7 @@ ECMP left at defaults).
 | BGP-capable attachments | Site-to-Site VPN, Connect, Direct Connect gateway, TGW peering, CNE-to-CNE |
 | Routing policy directions | `inbound`, `outbound` |
 | Routing policies on NFGs | **not supported** |
-| Overlapping CIDRs | **not supported** (use VPC Lattice / PrivateLink instead) |
+| Overlapping CIDRs | **not solved by the policy** (VPC Lattice / PrivateLink; 1:1 NAT on the attachment as the exception, not on `transit-gateway-route-table`) |
 | Prefix lists for routing policies | must be created in `us-west-2`, and associated before the policy references the alias |
 
 ## Authoritative references

@@ -14,6 +14,8 @@ Four properties shape everything else you write:
 * **An attachment belongs to exactly one segment**, or to one network function group.
 * **Segments do not solve overlapping CIDRs.** This is IP routing, so addresses have to be unique.
 
+> **Unique addressing remains the design to aim for.** Where renumbering is not an option, such as an acquired or partner network, [1:1 NAT](https://docs.aws.amazon.com/network-manager/latest/cloudwan/cloudwan-nat.html) configured on the attachment can translate one side into a unique range. Treat it as an exception for networks you cannot renumber, not as a substitute for an addressing plan. It is not available on `transit-gateway-route-table` attachments, or on a VPC attachment with appliance mode such as an inspection VPC.
+
 The other place an attachment can land is a [**network function group**](https://docs.aws.amazon.com/network-manager/latest/cloudwan/cloudwan-policies-json.html#cloudwan-network-functions-json): a specialised segment for inspection VPCs. The difference that matters is routing — you do not manage it. AWS Cloud WAN does, from the [`service insertion`](./5-service_insertion.md) rules you write.
 
 ## `segments`
