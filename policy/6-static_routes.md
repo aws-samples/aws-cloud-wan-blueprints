@@ -58,6 +58,8 @@ An array of prefixes, IPv4 or IPv6 or both.
 
 Every prefix listed resolves to the same `destinations`, so group them only where they share a next hop. Keep the routing behaviour consistent across Regions: **if one Region has a route to a destination, the others should too**, even by a different path.
 
+> **1:1 NAT may need a static route.** [1:1 NAT](https://docs.aws.amazon.com/network-manager/latest/cloudwan/cloudwan-nat.html) is configured on the attachment, not in the policy, and Cloud WAN or the attachment's BGP peers normally provide the route to the NAT CIDR. A VPC NAT rule whose match source CIDR is not exactly one of the VPC's CIDRs [needs a `create-route` for it](https://docs.aws.amazon.com/network-manager/latest/cloudwan/cloudwan-nat-configure.html). A static route for a NAT CIDR also outranks the route NAT installs.
+
 ## `destinations`
 
 Where matching traffic goes, in one of two mutually exclusive forms. Attachment IDs send it to specific attachments, **up to one per Region**:
