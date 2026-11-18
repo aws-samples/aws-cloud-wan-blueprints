@@ -19,5 +19,6 @@ Each diagram is named after the [`infra/`](../infra/) pattern it illustrates and
 | `3-transit_gateway.png` | [`infra/3-transit_gateway`](../infra/3-transit_gateway/) |
 | `4-hybrid.png` | [`infra/4-hybrid`](../infra/4-hybrid/) |
 | `5-multi_account.png` | [`infra/5-multi_account`](../infra/5-multi_account/) |
+| `7-attachment_nat.png` | [`infra/7-attachment_nat`](../infra/7-attachment_nat/) |
 
 [`infra/6-prefix_list_association`](../infra/6-prefix_list_association/) intentionally has no diagram: it creates no attachments or workloads, so there is no topology to draw.
