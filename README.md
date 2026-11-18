@@ -39,7 +39,7 @@ A Cloud WAN design can combine routing domains, attachment types, segment sharin
 
 | Layer | Contains | Organised by |
 |-------|----------|--------------|
-| [`infra/`](./infra/) | **Deployable infrastructure** patterns, each shipping CloudFormation and Terraform plus a working baseline policy | Which **attachment types** it creates, plus multi-Account and prefix list association |
+| [`infra/`](./infra/) | **Deployable infrastructure** patterns, each shipping CloudFormation and Terraform plus a working baseline policy | Which **attachment types** it creates, plus multi-Account, prefix list association and 1:1 NAT on attachments |
 | [`policy/`](./policy/) | **What a network policy can express**: capabilities, best practices, constraints, and composable snippets | The policy document's own top-level areas |
 | [`guidance/`](./guidance/) | **Scenario deep dives**: design reasoning for specific requirements that compose several policy capabilities at once | The scenario it answers, catalogued in [`guidance/README.md`](./guidance/README.md) |
 | [`SKILLS.md`](./SKILLS.md) | **Agent knowledge and workflow**: how to translate requirements into a complete policy and pick the infrastructure to test it | Knowledge first, then the generation procedure |
