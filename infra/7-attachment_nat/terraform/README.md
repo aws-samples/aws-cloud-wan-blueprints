@@ -3,6 +3,8 @@
 
 In this pattern, we want to show how 1:1 NAT on Cloud WAN attachments connects networks whose CIDRs overlap.
 
+![1:1 NAT architecture](../../../images/7-attachment\_nat.png)
+
 See [the pattern README](../README.md) for what this builds, the NAT rules and tags it applies, what its baseline policy configures, and how to verify it.
 
 ## Prerequisites

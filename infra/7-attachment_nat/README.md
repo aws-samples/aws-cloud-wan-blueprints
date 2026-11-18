@@ -7,6 +7,8 @@ description: "A deployable CloudFormation and Terraform pattern with two VPCs th
 
 In this pattern, we want to show how [1:1 NAT](https://docs.aws.amazon.com/network-manager/latest/cloudwan/cloudwan-nat.html) on Cloud WAN attachments connects networks whose CIDRs overlap. Unique addressing remains the design to aim for: use NAT for networks you cannot renumber, such as an acquisition or a partner, not as the default.
 
+![1:1 NAT architecture](../../images/7-attachment_nat.png)
+
 ## Implementations
 
 | IaC | Directory |

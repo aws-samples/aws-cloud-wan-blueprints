@@ -2,45 +2,50 @@
 # SPDX-License-Identifier: MIT-0
 #
 # ============================================================================
-# One VPC, its Cloud WAN attachment and a test instance per Availability Zone.
-# Deployed once per VPC (see Makefile), because the VPCs differ per Region.
+# The VPCs of one Region, their Cloud WAN attachments and a test instance per
+# Availability Zone. Deployed once per Region (see Makefile); what each Region
+# gets is keyed by Region name in Mappings.
 #
-# NatCidr empty - CWANAttachment, a plain attachment reached by its real addresses
-# NatCidr set   - CWANNatAttachment, which translates VpcCidr to NatCidr (1:1 NAT)
+# SharedVpcCIDR   - a VPC with a plain attachment, reached by its real addresses.
+#                   Only Regions with an entry get one.
+# AcquiredVpcCIDR - a VPC whose attachment translates CIDR to NatCidr (1:1 NAT).
+#                   Every Region gets one; the CIDRs may overlap, the NAT CIDRs may not.
 # ============================================================================
 AWSTemplateFormatVersion: 2010-09-09
-Description: AWS Cloud WAN Blueprints - 1:1 NAT on attachments (VPC & workloads)
+Description: AWS Cloud WAN Blueprints - 1:1 NAT on attachments (VPCs & workloads)
 Transform: 'AWS::LanguageExtensions'
+Metadata:
+  cfn-lint:
+    config:
+      ignore_checks:
+        # DeploySharedVpc depends on the Region. cfn-lint evaluates it for its default Region
+        # only (us-east-1) and warns that the result is fixed; it is not in eu-west-1.
+        - W8003
 
 Parameters:
   CoreNetworkArn:
     Type: String
   CoreNetworkId:
     Type: String
-  VpcName:
-    Type: String
-    Description: Name of the VPC, used as a prefix when naming resources.
-  VpcCidr:
-    Type: String
-    Description: IPv4 CIDR of the VPC. It is split into six /28 subnets.
-  NatCidr:
-    Type: String
-    Default: ''
-    Description: NAT CIDR that VpcCidr is translated to, with the same prefix length. Empty to attach without NAT.
-  Segment:
-    Type: String
-    Default: corporate
-    Description: Value of the domain tag, which names the segment the attachment associates with.
   LatestAmiId:
     Type: "AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>"
     Default: "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64"
 
-Conditions:
-  EnableNat: !Not [!Equals [!Ref NatCidr, '']]
-  DisableNat: !Equals [!Ref NatCidr, '']
-
 Mappings:
-  # Position of each subnet among the six /28 blocks carved from VpcCidr
+  SharedVpcCIDR:
+    us-east-1:
+      Name: shared
+      CIDR: 10.0.0.0/16
+  AcquiredVpcCIDR:
+    us-east-1:
+      Name: acquired-a
+      CIDR: 10.10.0.0/16
+      NatCidr: 100.64.0.0/16
+    eu-west-1:
+      Name: acquired-b
+      CIDR: 10.10.0.0/16
+      NatCidr: 100.65.0.0/16
+  # Position of each subnet among the six /28 blocks carved from a VPC's CIDR
   SubnetIndex:
     Endpoint:
       a: 0
@@ -52,89 +57,269 @@ Mappings:
       a: 4
       b: 5
 
+Conditions:
+  DeploySharedVpc: !Not [!Equals [!FindInMap [SharedVpcCIDR, !Ref 'AWS::Region', CIDR, DefaultValue: ''], '']]
+
 Resources:
-  # ---------- VPC ----------
-  VPC:
+  # ---------- SHARED VPC ----------
+  SharedVPC:
     Type: AWS::EC2::VPC
+    Condition: DeploySharedVpc
     Properties:
-      CidrBlock: !Ref VpcCidr
+      CidrBlock: !FindInMap [SharedVpcCIDR, !Ref 'AWS::Region', CIDR, DefaultValue: '']
       Tags:
         - Key: Name
-          Value: !Sub '${VpcName}-vpc-${AWS::Region}'
+          Value: !Sub
+            - '${Name}-vpc-${AWS::Region}'
+            - Name: !FindInMap [SharedVpcCIDR, !Ref 'AWS::Region', Name, DefaultValue: shared]
 
   # For::Each iteration: per subnet type (Endpoint, Private, CWAN) and AZ (2 AZs)
   # Resources to create: 6 subnets, 6 route tables, 6 route table associations - obtaining AZ affinity
-  'Fn::ForEach::SubnetTypes':
+  'Fn::ForEach::SharedSubnetTypes':
     - SubnetType
     - [Endpoint, Private, CWAN]
-    - '${SubnetType}':
+    - 'Shared${SubnetType}':
       'Fn::ForEach::AZ':
         - AvailabilityZone
         - [a, b]
           # Subnets
-        - '${SubnetType}Subnet${AvailabilityZone}':
+        - 'Shared${SubnetType}Subnet${AvailabilityZone}':
             Type: AWS::EC2::Subnet
+            Condition: DeploySharedVpc
             Properties:
-              VpcId: !Ref VPC
+              VpcId: !Ref SharedVPC
               AvailabilityZone: !Sub ${AWS::Region}${AvailabilityZone}
               CidrBlock: !Select
                 - !FindInMap [SubnetIndex, !Ref SubnetType, !Ref AvailabilityZone]
-                - !Cidr [!Ref VpcCidr, 6, 4]
+                - !Cidr [!GetAtt SharedVPC.CidrBlock, 6, 4]
               Tags:
                 - Key: Name
-                  Value: !Sub '${VpcName}-subnet-${SubnetType}-AZ${AvailabilityZone}'
+                  Value: !Sub
+                    - '${Name}-subnet-${SubnetType}-AZ${AvailabilityZone}'
+                    - Name: !FindInMap [SharedVpcCIDR, !Ref 'AWS::Region', Name, DefaultValue: shared]
           # Route Tables
-          '${SubnetType}RouteTable${AvailabilityZone}':
+          'Shared${SubnetType}RouteTable${AvailabilityZone}':
             Type: AWS::EC2::RouteTable
+            Condition: DeploySharedVpc
             Properties:
-              VpcId: !Ref VPC
+              VpcId: !Ref SharedVPC
               Tags:
                 - Key: Name
-                  Value: !Sub '${VpcName}-rt-${SubnetType}-AZ${AvailabilityZone}'
+                  Value: !Sub
+                    - '${Name}-rt-${SubnetType}-AZ${AvailabilityZone}'
+                    - Name: !FindInMap [SharedVpcCIDR, !Ref 'AWS::Region', Name, DefaultValue: shared]
           # Route Table associations
-          '${SubnetType}RouteTableAssociation${AvailabilityZone}':
+          'Shared${SubnetType}RouteTableAssociation${AvailabilityZone}':
             Type: AWS::EC2::SubnetRouteTableAssociation
+            Condition: DeploySharedVpc
             Properties:
               RouteTableId: !Ref
-                'Fn::Sub': '${SubnetType}RouteTable${AvailabilityZone}'
+                'Fn::Sub': 'Shared${SubnetType}RouteTable${AvailabilityZone}'
               SubnetId: !Ref
-                'Fn::Sub': '${SubnetType}Subnet${AvailabilityZone}'
+                'Fn::Sub': 'Shared${SubnetType}Subnet${AvailabilityZone}'
 
   # For::Each iteration: per Availability Zone
   # Default route to the core network in the workload subnets (the VPC local route still wins for the VPC's own CIDR)
-  'Fn::ForEach::VPCRoutes':
+  'Fn::ForEach::SharedVPCRoutes':
     - AvailabilityZone
     - [a, b]
-    - 'DefaultRouteToCWAN${AvailabilityZone}':
+    - 'SharedDefaultRouteToCWAN${AvailabilityZone}':
         DependsOn:
-          - AttachmentReady
+          - SharedCWANAttachment
         Type: AWS::EC2::Route
+        Condition: DeploySharedVpc
         Properties:
           RouteTableId: !Ref
-            'Fn::Sub': 'PrivateRouteTable${AvailabilityZone}'
+            'Fn::Sub': 'SharedPrivateRouteTable${AvailabilityZone}'
           DestinationCidrBlock: 0.0.0.0/0
           CoreNetworkArn: !Ref CoreNetworkArn
 
-  # AWS Cloud WAN attachment - VPC without 1:1 NAT
-  CWANAttachment:
+  # AWS Cloud WAN attachment - no NAT, so the VPC is reached by its real addresses
+  SharedCWANAttachment:
     Type: AWS::NetworkManager::VpcAttachment
-    Condition: DisableNat
+    Condition: DeploySharedVpc
     Properties:
       CoreNetworkId: !Ref CoreNetworkId
       SubnetArns:
-        - !Sub 'arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:subnet/${CWANSubneta}'
-        - !Sub 'arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:subnet/${CWANSubnetb}'
-      VpcArn: !Sub 'arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:vpc/${VPC}'
+        - !Sub 'arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:subnet/${SharedCWANSubneta}'
+        - !Sub 'arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:subnet/${SharedCWANSubnetb}'
+      VpcArn: !Sub 'arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:vpc/${SharedVPC}'
       Tags:
         - Key: Name
-          Value: !Sub '${VpcName}-vpc-attachment-${AWS::Region}'
+          Value: !Sub
+            - '${Name}-vpc-attachment-${AWS::Region}'
+            - Name: !FindInMap [SharedVpcCIDR, !Ref 'AWS::Region', Name, DefaultValue: shared]
         - Key: domain
-          Value: !Ref Segment
+          Value: shared
 
-  # AWS Cloud WAN attachment - VPC with 1:1 NAT (VpcCidr translated to NatCidr)
-  CWANNatAttachment:
+  # Security Groups (Instances and EC2 Instance Connect endpoint)
+  SharedInstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Condition: DeploySharedVpc
+    Properties:
+      GroupDescription: !Sub
+        - '${Name} VPC - Instance Security Group'
+        - Name: !FindInMap [SharedVpcCIDR, !Ref 'AWS::Region', Name, DefaultValue: shared]
+      VpcId: !Ref SharedVPC
+
+  SharedInstanceSecurityGroupIngressICMP:
+    Type: AWS::EC2::SecurityGroupIngress
+    Condition: DeploySharedVpc
+    Properties:
+      GroupId: !Ref SharedInstanceSecurityGroup
+      Description: Allow ICMP from anywhere, so cross-segment and cross-Region ping tests work
+      IpProtocol: icmp
+      FromPort: -1
+      ToPort: -1
+      CidrIp: 0.0.0.0/0
+
+  SharedInstanceSecurityGroupIngressEIC:
+    Type: AWS::EC2::SecurityGroupIngress
+    Condition: DeploySharedVpc
+    Properties:
+      GroupId: !Ref SharedInstanceSecurityGroup
+      Description: Allowing EIC connection
+      IpProtocol: tcp
+      FromPort: 22
+      ToPort: 22
+      SourceSecurityGroupId: !Ref SharedEndpointSecurityGroup
+
+  SharedInstanceSecurityGroupEgress:
+    Type: AWS::EC2::SecurityGroupEgress
+    Condition: DeploySharedVpc
+    Properties:
+      GroupId: !Ref SharedInstanceSecurityGroup
+      Description: Allowing egress traffic
+      IpProtocol: -1
+      CidrIp: 0.0.0.0/0
+
+  SharedEndpointSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Condition: DeploySharedVpc
+    Properties:
+      GroupDescription: !Sub
+        - '${Name} VPC - Endpoints Security Group'
+        - Name: !FindInMap [SharedVpcCIDR, !Ref 'AWS::Region', Name, DefaultValue: shared]
+      VpcId: !Ref SharedVPC
+
+  SharedEndpointSecurityGroupEgressEIC:
+    Type: AWS::EC2::SecurityGroupEgress
+    Condition: DeploySharedVpc
+    Properties:
+      GroupId: !Ref SharedEndpointSecurityGroup
+      Description: Allowing EIC connection
+      IpProtocol: tcp
+      FromPort: 22
+      ToPort: 22
+      DestinationSecurityGroupId: !Ref SharedInstanceSecurityGroup
+
+  # For::Each iteration: per AZ (2 AZs)
+  # EC2 Instances
+  'Fn::ForEach::SharedInstances':
+    - AvailabilityZone
+    - [a, b]
+    - 'SharedInstance${AvailabilityZone}':
+        Type: AWS::EC2::Instance
+        Condition: DeploySharedVpc
+        Properties:
+          InstanceType: t2.micro
+          SecurityGroupIds:
+            - !Ref SharedInstanceSecurityGroup
+          SubnetId: !Ref
+            'Fn::Sub': 'SharedPrivateSubnet${AvailabilityZone}'
+          ImageId: !Ref LatestAmiId
+          Tags:
+            - Key: Name
+              Value: !Sub
+                - '${Name}-instance-${AvailabilityZone}'
+                - Name: !FindInMap [SharedVpcCIDR, !Ref 'AWS::Region', Name, DefaultValue: shared]
+
+  # EC2 Instance Connect Endpoint
+  SharedEICEndpoint:
+    Type: AWS::EC2::InstanceConnectEndpoint
+    Condition: DeploySharedVpc
+    Properties:
+      PreserveClientIp: false
+      SecurityGroupIds:
+        - !Ref SharedEndpointSecurityGroup
+      SubnetId: !Ref SharedEndpointSubneta
+      Tags:
+        - Key: Name
+          Value: !Sub
+            - '${Name}-eic'
+            - Name: !FindInMap [SharedVpcCIDR, !Ref 'AWS::Region', Name, DefaultValue: shared]
+
+  # ---------- ACQUIRED VPC ----------
+  AcquiredVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !FindInMap [AcquiredVpcCIDR, !Ref 'AWS::Region', CIDR]
+      Tags:
+        - Key: Name
+          Value: !Sub
+            - '${Name}-vpc-${AWS::Region}'
+            - Name: !FindInMap [AcquiredVpcCIDR, !Ref 'AWS::Region', Name]
+
+  # For::Each iteration: per subnet type (Endpoint, Private, CWAN) and AZ (2 AZs)
+  # Resources to create: 6 subnets, 6 route tables, 6 route table associations - obtaining AZ affinity
+  'Fn::ForEach::AcquiredSubnetTypes':
+    - SubnetType
+    - [Endpoint, Private, CWAN]
+    - 'Acquired${SubnetType}':
+      'Fn::ForEach::AZ':
+        - AvailabilityZone
+        - [a, b]
+          # Subnets
+        - 'Acquired${SubnetType}Subnet${AvailabilityZone}':
+            Type: AWS::EC2::Subnet
+            Properties:
+              VpcId: !Ref AcquiredVPC
+              AvailabilityZone: !Sub ${AWS::Region}${AvailabilityZone}
+              CidrBlock: !Select
+                - !FindInMap [SubnetIndex, !Ref SubnetType, !Ref AvailabilityZone]
+                - !Cidr [!GetAtt AcquiredVPC.CidrBlock, 6, 4]
+              Tags:
+                - Key: Name
+                  Value: !Sub
+                    - '${Name}-subnet-${SubnetType}-AZ${AvailabilityZone}'
+                    - Name: !FindInMap [AcquiredVpcCIDR, !Ref 'AWS::Region', Name]
+          # Route Tables
+          'Acquired${SubnetType}RouteTable${AvailabilityZone}':
+            Type: AWS::EC2::RouteTable
+            Properties:
+              VpcId: !Ref AcquiredVPC
+              Tags:
+                - Key: Name
+                  Value: !Sub
+                    - '${Name}-rt-${SubnetType}-AZ${AvailabilityZone}'
+                    - Name: !FindInMap [AcquiredVpcCIDR, !Ref 'AWS::Region', Name]
+          # Route Table associations
+          'Acquired${SubnetType}RouteTableAssociation${AvailabilityZone}':
+            Type: AWS::EC2::SubnetRouteTableAssociation
+            Properties:
+              RouteTableId: !Ref
+                'Fn::Sub': 'Acquired${SubnetType}RouteTable${AvailabilityZone}'
+              SubnetId: !Ref
+                'Fn::Sub': 'Acquired${SubnetType}Subnet${AvailabilityZone}'
+
+  # For::Each iteration: per Availability Zone
+  # Default route to the core network in the workload subnets (the VPC local route still wins for the VPC's own CIDR)
+  'Fn::ForEach::AcquiredVPCRoutes':
+    - AvailabilityZone
+    - [a, b]
+    - 'AcquiredDefaultRouteToCWAN${AvailabilityZone}':
+        DependsOn:
+          - AcquiredCWANAttachment
+        Type: AWS::EC2::Route
+        Properties:
+          RouteTableId: !Ref
+            'Fn::Sub': 'AcquiredPrivateRouteTable${AvailabilityZone}'
+          DestinationCidrBlock: 0.0.0.0/0
+          CoreNetworkArn: !Ref CoreNetworkArn
+
+  # AWS Cloud WAN attachment - 1:1 NAT translates the VPC CIDR to its NatCidr
+  AcquiredCWANAttachment:
     Type: AWS::NetworkManager::VpcAttachment
-    Condition: EnableNat
     Metadata:
       cfn-lint:
         config:
@@ -145,111 +330,123 @@ Resources:
     Properties:
       CoreNetworkId: !Ref CoreNetworkId
       SubnetArns:
-        - !Sub 'arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:subnet/${CWANSubneta}'
-        - !Sub 'arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:subnet/${CWANSubnetb}'
-      VpcArn: !Sub 'arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:vpc/${VPC}'
+        - !Sub 'arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:subnet/${AcquiredCWANSubneta}'
+        - !Sub 'arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:subnet/${AcquiredCWANSubnetb}'
+      VpcArn: !Sub 'arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:vpc/${AcquiredVPC}'
       NatGatewaySupport: ENABLE
       NatGatewayRules:
         - RuleNumber: 100
-          MatchSourceCidr: !Ref VpcCidr
-          NatCidr: !Ref NatCidr
+          MatchSourceCidr: !FindInMap [AcquiredVpcCIDR, !Ref 'AWS::Region', CIDR]
+          NatCidr: !FindInMap [AcquiredVpcCIDR, !Ref 'AWS::Region', NatCidr]
       Tags:
         - Key: Name
-          Value: !Sub '${VpcName}-nat-attachment-${AWS::Region}'
+          Value: !Sub
+            - '${Name}-nat-attachment-${AWS::Region}'
+            - Name: !FindInMap [AcquiredVpcCIDR, !Ref 'AWS::Region', Name]
         - Key: domain
-          Value: !Ref Segment
-
-  # Whichever attachment the condition creates. The routes depend on this handle.
-  AttachmentReady:
-    Type: AWS::CloudFormation::WaitConditionHandle
-    Metadata:
-      AttachmentId: !If [EnableNat, !Ref CWANNatAttachment, !Ref CWANAttachment]
+          Value: corporate
 
   # Security Groups (Instances and EC2 Instance Connect endpoint)
-  InstanceSecurityGroup:
+  AcquiredInstanceSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: !Sub '${VpcName} VPC - Instance Security Group'
-      VpcId: !Ref VPC
+      GroupDescription: !Sub
+        - '${Name} VPC - Instance Security Group'
+        - Name: !FindInMap [AcquiredVpcCIDR, !Ref 'AWS::Region', Name]
+      VpcId: !Ref AcquiredVPC
 
-  InstanceSecurityGroupIngressICMP:
+  AcquiredInstanceSecurityGroupIngressICMP:
     Type: AWS::EC2::SecurityGroupIngress
     Properties:
-      GroupId: !Ref InstanceSecurityGroup
+      GroupId: !Ref AcquiredInstanceSecurityGroup
       Description: Allow ICMP from anywhere, so cross-segment and cross-Region ping tests work
       IpProtocol: icmp
       FromPort: -1
       ToPort: -1
       CidrIp: 0.0.0.0/0
 
-  InstanceSecurityGroupIngressEIC:
+  AcquiredInstanceSecurityGroupIngressEIC:
     Type: AWS::EC2::SecurityGroupIngress
     Properties:
-      GroupId: !Ref InstanceSecurityGroup
+      GroupId: !Ref AcquiredInstanceSecurityGroup
       Description: Allowing EIC connection
       IpProtocol: tcp
       FromPort: 22
       ToPort: 22
-      SourceSecurityGroupId: !Ref EndpointSecurityGroup
+      SourceSecurityGroupId: !Ref AcquiredEndpointSecurityGroup
 
-  InstanceSecurityGroupEgress:
+  AcquiredInstanceSecurityGroupEgress:
     Type: AWS::EC2::SecurityGroupEgress
     Properties:
-      GroupId: !Ref InstanceSecurityGroup
+      GroupId: !Ref AcquiredInstanceSecurityGroup
       Description: Allowing egress traffic
       IpProtocol: -1
       CidrIp: 0.0.0.0/0
 
-  EndpointSecurityGroup:
+  AcquiredEndpointSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: !Sub '${VpcName} VPC - Endpoints Security Group'
-      VpcId: !Ref VPC
+      GroupDescription: !Sub
+        - '${Name} VPC - Endpoints Security Group'
+        - Name: !FindInMap [AcquiredVpcCIDR, !Ref 'AWS::Region', Name]
+      VpcId: !Ref AcquiredVPC
 
-  EndpointSecurityGroupEgressEIC:
+  AcquiredEndpointSecurityGroupEgressEIC:
     Type: AWS::EC2::SecurityGroupEgress
     Properties:
-      GroupId: !Ref EndpointSecurityGroup
+      GroupId: !Ref AcquiredEndpointSecurityGroup
       Description: Allowing EIC connection
       IpProtocol: tcp
       FromPort: 22
       ToPort: 22
-      DestinationSecurityGroupId: !Ref InstanceSecurityGroup
+      DestinationSecurityGroupId: !Ref AcquiredInstanceSecurityGroup
 
   # For::Each iteration: per AZ (2 AZs)
   # EC2 Instances
-  'Fn::ForEach::Instances':
+  'Fn::ForEach::AcquiredInstances':
     - AvailabilityZone
     - [a, b]
-    - 'Instance${AvailabilityZone}':
+    - 'AcquiredInstance${AvailabilityZone}':
         Type: AWS::EC2::Instance
         Properties:
           InstanceType: t2.micro
           SecurityGroupIds:
-            - !Ref InstanceSecurityGroup
+            - !Ref AcquiredInstanceSecurityGroup
           SubnetId: !Ref
-            'Fn::Sub': 'PrivateSubnet${AvailabilityZone}'
+            'Fn::Sub': 'AcquiredPrivateSubnet${AvailabilityZone}'
           ImageId: !Ref LatestAmiId
           Tags:
             - Key: Name
-              Value: !Sub '${VpcName}-instance-${AvailabilityZone}'
+              Value: !Sub
+                - '${Name}-instance-${AvailabilityZone}'
+                - Name: !FindInMap [AcquiredVpcCIDR, !Ref 'AWS::Region', Name]
 
   # EC2 Instance Connect Endpoint
-  EICEndpoint:
+  AcquiredEICEndpoint:
     Type: AWS::EC2::InstanceConnectEndpoint
     Properties:
       PreserveClientIp: false
       SecurityGroupIds:
-        - !Ref EndpointSecurityGroup
-      SubnetId: !Ref EndpointSubneta
+        - !Ref AcquiredEndpointSecurityGroup
+      SubnetId: !Ref AcquiredEndpointSubneta
       Tags:
         - Key: Name
-          Value: !Sub '${VpcName}-eic'
+          Value: !Sub
+            - '${Name}-eic'
+            - Name: !FindInMap [AcquiredVpcCIDR, !Ref 'AWS::Region', Name]
 
 Outputs:
-  VpcId:
-    Description: VPC ID.
-    Value: !Ref VPC
-  AttachmentId:
-    Description: Cloud WAN VPC attachment ID.
-    Value: !If [EnableNat, !Ref CWANNatAttachment, !Ref CWANAttachment]
+  SharedVpcId:
+    Condition: DeploySharedVpc
+    Description: Shared VPC ID.
+    Value: !Ref SharedVPC
+  SharedAttachmentId:
+    Condition: DeploySharedVpc
+    Description: Cloud WAN VPC attachment ID of the shared VPC.
+    Value: !Ref SharedCWANAttachment
+  AcquiredVpcId:
+    Description: Acquired VPC ID.
+    Value: !Ref AcquiredVPC
+  AcquiredAttachmentId:
+    Description: Cloud WAN VPC attachment ID of the acquired VPC, with 1:1 NAT.
+    Value: !Ref AcquiredCWANAttachment

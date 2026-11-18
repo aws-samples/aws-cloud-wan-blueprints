@@ -19,10 +19,11 @@ So the patterns here show how those attachments are created and connect to the c
 | [`4-hybrid`](./4-hybrid/) | `vpc`, `site-to-site-vpn`, `direct-connect-gateway` | On-premises integration, and association by attachment type |
 | [`5-multi_account`](./5-multi_account/) | none — spoke accounts create their own | Cross-account attachment governance |
 | [`6-prefix_list_association`](./6-prefix_list_association/) | none | Associating a managed prefix list so a routing policy can match on its alias |
+| [`7-attachment_nat`](./7-attachment_nat/) | `vpc`, optionally `site-to-site-vpn` | 1:1 NAT on attachments, for overlapping CIDRs you cannot renumber |
 
 ## Your architecture may not match a pattern exactly
 
-That is expected, and it is not a gap in these blueprints. AWS Cloud WAN designs vary along more axes than a directory tree can hold, so the number of complete end-to-end architectures is effectively unbounded. Shipping one directory per architecture will be hard to maintain and for consumers difficult to find their specific use case. What *is* bounded is the set of **building blocks**: the attachment types, and how each one is created and connected to a core network. That is all a pattern is. Between them these six cover every attachment type AWS Cloud WAN supports, how multi-Account works with a core network, and how you can associate prefix lists to the core network. So pick the pattern whose attachment types match what you need to connect, and treat it as the substrate rather than the answer.
+That is expected, and it is not a gap in these blueprints. AWS Cloud WAN designs vary along more axes than a directory tree can hold, so the number of complete end-to-end architectures is effectively unbounded. Shipping one directory per architecture will be hard to maintain and for consumers difficult to find their specific use case. What *is* bounded is the set of **building blocks**: the attachment types, and how each one is created and connected to a core network. That is all a pattern is. Between them these seven cover every attachment type AWS Cloud WAN supports, how multi-Account works with a core network, how you can associate prefix lists to the core network, and how 1:1 NAT on attachments connects overlapping CIDRs. So pick the pattern whose attachment types match what you need to connect, and treat it as the substrate rather than the answer.
 
 Then put your effort into the **policy**, because that is what separates your design from anyone else's. Two networks with byte-identical infrastructure behave completely differently depending on their segments, sharing, service insertion, and routing policies. Head to [`policy/`](../policy/) for that — or to [`guidance/`](../guidance/) first if your requirement is a scenario that spans several capabilities at once, since those deep dives compose the capability pages for you. See [Deploying a policy of your own](#deploying-a-policy-of-your-own) below for how to point a pattern at what you write.
 
@@ -40,6 +41,7 @@ When you do need to change the infrastructure, the change is usually small and l
   - `4-hybrid` also needs Site-to-Site VPN and Direct Connect. Each is independently optional, and the Direct Connect gateway attachment needs a real circuit to carry traffic.
   - `5-multi_account` also needs AWS RAM, and a second AWS account to accept the share.
   - `6-prefix_list_association` needs EC2 managed prefix lists, and no VPC or instance permissions at all.
+  - `7-attachment_nat` may need Site-to-Site VPN if you enable the VPN.
 - The **AWS CLI**, configured with credentials.
 - **Terraform**, if you deploy with Terraform. The minimum version is in each pattern's `terraform/README.md`, under *Requirements*.
 - **`make`**, if you deploy with CloudFormation.
@@ -64,11 +66,11 @@ Where the resources actually live differs, because two patterns create no attach
 
 | Pattern | Resources in | Why |
 |---------|--------------|-----|
-| `1-basic`, `2-inspection`, `3-transit_gateway`, `4-hybrid` | `us-east-1`, `eu-west-1` | Matches the edge locations |
+| `1-basic`, `2-inspection`, `3-transit_gateway`, `4-hybrid`, `7-attachment_nat` | `us-east-1`, `eu-west-1` | Matches the edge locations |
 | `5-multi_account` | `us-east-1` and `us-west-2` | A global resource can only be shared through AWS RAM from `us-east-1` |
 | `6-prefix_list_association` | `us-west-2` | An associated prefix list has to live in AWS Cloud WAN's home Region |
 
-**To add a Region, or use different ones**, put it in the policy's `edge-locations` and then follow the infrastructure that attaches to the core network. For `5-multi_account` and `6-prefix_list_association` the policy is the only change. For the other four:
+**To add a Region, or use different ones**, put it in the policy's `edge-locations` and then follow the infrastructure that attaches to the core network. For `5-multi_account` and `6-prefix_list_association` the policy is the only change. For the other five:
 
 | Tool | File | Add |
 |------|------|-----|
@@ -86,6 +88,7 @@ What is keyed per Region differs per pattern:
 | `2-inspection` | `<region>_spoke_vpcs`, `<region>_inspection_vpc` | `ProdVpcCIDR`, `DevVpcCIDR`, `InspectionVpcCIDR` |
 | `3-transit_gateway` | `<region>_spoke_vpcs`, `transit_gateway_asns` | `ProdVpcCIDR`, `DevVpcCIDR`, `TransitGatewayASN` |
 | `4-hybrid` | `<region>_spoke_vpc` — one VPC per Region | `SpokeVpcCIDR` |
+| `7-attachment_nat` | `<region>_vpcs`, plus an `awscc` provider alias per Region, because the VPC attachments are `awscc` resources | `AcquiredVpcCIDR` (with its `NatCidr`), and `SharedVpcCIDR` only where the Region gets a `shared` VPC |
 
 To use different Regions rather than more of them, rename the keys instead of adding to them. A new Transit Gateway ASN has to stay outside the policy's `asn-ranges`.
 
@@ -105,6 +108,7 @@ Where a pattern binds by tag it always works the same way: the rule matches `tag
 | `4-hybrid` | **none** | `attachment-type`, with the segment as a constant: hybrid types to `hybrid`, `vpc` to `vpcs` |
 | `5-multi_account` | `domain = <segment>`, applied by the **attachment owner** | Tag value |
 | `6-prefix_list_association` | `domain = <segment>`, but no attachments are created | Tag value |
+| `7-attachment_nat` | `domain = <segment>` on the VPC attachments; none on the VPN attachment | Tag value for VPCs; `attachment-type` with a constant segment for the VPN |
 
 Both methods are shipped deliberately, and the choice generalises. **Tag when the destination is a choice:** a VPC could reasonably belong to any segment, so something has to say which. **Match the type when the type is the intent:** a Direct Connect gateway attachment is hybrid by definition, so a tag would only add something to get wrong. `4-hybrid` binds everything by type to stay consistent within the pattern.
 

@@ -2,6 +2,8 @@
 
 In this pattern, we want to show how 1:1 NAT on Cloud WAN attachments connects networks whose CIDRs overlap.
 
+![1:1 NAT architecture](../../../images/7-attachment_nat.png)
+
 See [the pattern README](../README.md) for what this builds, the NAT rules and tags it applies, what its baseline policy configures, and how to verify it.
 
 ## Prerequisites
@@ -15,7 +17,7 @@ See [the pattern README](../README.md) for what this builds, the NAT rules and t
 | Template | Deploys | Region |
 |----------|---------|--------|
 | `core_network.yaml` | Global network, core network, and the policy | `us-east-1` |
-| `workloads.yaml` | One VPC, its Cloud WAN attachment (`CWANNatAttachment` when `NatCidr` is set, otherwise `CWANAttachment`), EC2 instances, EC2 Instance Connect endpoint | Once per VPC: `shared` and `acquired-a` in `us-east-1`, `acquired-b` in `eu-west-1` |
+| `workloads.yaml` | The VPCs of one Region, each with its Cloud WAN attachment, EC2 instances and EC2 Instance Connect endpoint: the acquired VPC with a NAT attachment (`AcquiredCWANAttachment`), plus the `shared` VPC with a plain one (`SharedCWANAttachment`) where `SharedVpcCIDR` has an entry for the Region | Once per Region: `shared` and `acquired-a` in `us-east-1`, `acquired-b` in `eu-west-1` |
 | `vpn.yaml` | Customer gateway, BGP VPN connection, and its Cloud WAN attachment with NAT | `us-east-1` |
 
 ## Deploy
@@ -25,7 +27,7 @@ cd infra/7-attachment_nat/cloudformation
 make deploy
 ```
 
-That deploys the pattern with its working baseline policy: the core network first, then the three VPC stacks. To take it a stack at a time, `make deploy-cloudwan` then `make deploy-workloads`. The CIDRs are Makefile variables (`SHARED_CIDR`, `ACQUIRED_CIDR`, `ACQUIRED_A_NAT`, `ACQUIRED_B_NAT`).
+That deploys the pattern with its working baseline policy: the core network first, then the workloads in both Regions. To take it a stack at a time, `make deploy-cloudwan` then `make deploy-workloads`. The VPC CIDRs and NAT CIDRs are in the `SharedVpcCIDR` and `AcquiredVpcCIDR` mappings of `workloads.yaml`, keyed by Region.
 
 The VPN is a separate stack and is off by default, because it needs values only you can supply. The customer gateway ASN must not overlap the core network's `asn-ranges`, which the baseline sets to `64520-64525`:
 
@@ -44,4 +46,4 @@ cd infra/7-attachment_nat/cloudformation
 make undeploy
 ```
 
-That removes the VPN stack and the VPC stacks first, then the core network. The order matters: deleting a core network that still has attachments fails, and the error does not name the cause. To do it a stack at a time, `make undeploy-vpn`, `make undeploy-workloads`, then `make undeploy-cloudwan`.
+That removes the VPN stack and the workload stacks first, then the core network. The order matters: deleting a core network that still has attachments fails, and the error does not name the cause. To do it a stack at a time, `make undeploy-vpn`, `make undeploy-workloads`, then `make undeploy-cloudwan`.
