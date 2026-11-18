@@ -607,6 +607,7 @@ policy expects — nothing more:
 | Any BGP capability, or hybrid attachments | [`4-hybrid`](./infra/4-hybrid/) |
 | A core network shared across accounts | [`5-multi_account`](./infra/5-multi_account/) |
 | A prefix list associated with the core network | [`6-prefix_list_association`](./infra/6-prefix_list_association/) |
+| 1:1 NAT on attachments, for overlapping CIDRs | [`7-attachment_nat`](./infra/7-attachment_nat/) |
 
 Every pattern's baseline policy declares **two Core Network Edge locations** (`us-east-1`,
 `eu-west-1`) and forwards traffic before the user writes anything. The managed resources do

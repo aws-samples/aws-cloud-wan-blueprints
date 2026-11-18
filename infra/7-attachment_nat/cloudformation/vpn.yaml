@@ -1,0 +1,88 @@
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: MIT-0
+#
+# ============================================================================
+# Optional Site-to-Site VPN with 1:1 NAT, deployed ONCE in us-east-1.
+#
+# The VPN connection uses BGP: Cloud WAN VPN attachments do not support static routing.
+# Its tunnels stay down until a real on-premises peer answers - see README.md.
+# ============================================================================
+AWSTemplateFormatVersion: 2010-09-09
+Description: AWS Cloud WAN Blueprints - 1:1 NAT on attachments (Site-to-Site VPN)
+
+Parameters:
+  Identifier:
+    Type: String
+    Default: overlap
+    Description: Project identifier, used as a suffix when naming resources.
+  CoreNetworkId:
+    Type: String
+    Description: Core network ID, from the core network stack.
+  CustomerGatewayIp:
+    Type: String
+    Description: Public IP address of your on-premises VPN device.
+  CustomerGatewayAsn:
+    Type: Number
+    Default: 65010
+    Description: BGP ASN of your on-premises VPN device. Must not overlap the asn-ranges in the policy document.
+  OnPremisesCidr:
+    Type: String
+    Default: 10.10.0.0/16
+    Description: IPv4 CIDR your on-premises network uses and advertises over BGP.
+  NatCidr:
+    Type: String
+    Default: 100.66.0.0/16
+    Description: NAT CIDR that OnPremisesCidr is translated to, with the same prefix length.
+
+Resources:
+  # Customer gateway
+  CustomerGateway:
+    Type: AWS::EC2::CustomerGateway
+    Properties:
+      BgpAsn: !Ref CustomerGatewayAsn
+      IpAddress: !Ref CustomerGatewayIp
+      Type: ipsec.1
+      Tags:
+        - Key: Name
+          Value: !Sub 'cgw-${Identifier}'
+
+  # VPN connection
+  VpnConnection:
+    Type: AWS::EC2::VPNConnection
+    Properties:
+      CustomerGatewayId: !Ref CustomerGateway
+      Type: ipsec.1
+      Tags:
+        - Key: Name
+          Value: !Sub 'vpn-${Identifier}'
+
+  # AWS Cloud WAN VPN attachment, with 1:1 NAT.
+  # NatSystemRouteSupport true (the default) installs a SYSTEM route for NatCidr. Set it to
+  # false to advertise NatCidr from your own BGP peers instead.
+  VpnAttachment:
+    Type: AWS::NetworkManager::SiteToSiteVpnAttachment
+    Metadata:
+      cfn-lint:
+        config:
+          ignore_checks:
+            # The cfn-lint schema does not include the NAT properties yet. NatGatewaySupport,
+            # NatGatewayRules and NatSystemRouteSupport are documented properties of
+            # AWS::NetworkManager::SiteToSiteVpnAttachment.
+            - E3002
+    Properties:
+      CoreNetworkId: !Ref CoreNetworkId
+      VpnConnectionArn: !Sub 'arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:vpn-connection/${VpnConnection}'
+      NatGatewaySupport: ENABLE
+      NatSystemRouteSupport: true
+      NatGatewayRules:
+        - RuleNumber: 100
+          MatchSourceCidr: !Ref OnPremisesCidr
+          NatCidr: !Ref NatCidr
+      Tags:
+        - Key: Name
+          Value: !Sub 'vpn-nat-attachment-${Identifier}'
+
+Outputs:
+  VpnAttachmentId:
+    Description: Site-to-Site VPN attachment ID.
+    Value: !Ref VpnAttachment

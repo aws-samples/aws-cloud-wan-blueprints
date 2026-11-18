@@ -152,7 +152,7 @@ A single pinned set is applied to every pattern. **Modules are exact-pinned with
 | Dependency | Pin | Form |
 |------------|-----|------|
 | `hashicorp/aws` (provider) | `6.34.0` | `version = ">= 6.34.0"` (floor) |
-| `hashicorp/awscc` (provider) | `1.67.0` | `version = ">= 1.67.0"` (floor) |
+| `hashicorp/awscc` (provider) | `1.110.0` | `version = ">= 1.110.0"` (floor) |
 | `aws-ia/vpc/aws` (module) | `4.7.3` | `version = "= 4.7.3"` (exact) |
 | `aws-ia/cloudwan/aws` (module) | `3.4.0` | `version = "= 3.4.0"` (exact) |
 | `aws-ia/networkfirewall/aws` (module) | `1.0.2` | `version = "= 1.0.2"` (exact) |
