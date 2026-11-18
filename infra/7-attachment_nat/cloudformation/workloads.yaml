@@ -1,0 +1,255 @@
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: MIT-0
+#
+# ============================================================================
+# One VPC, its Cloud WAN attachment and a test instance per Availability Zone.
+# Deployed once per VPC (see Makefile), because the VPCs differ per Region.
+#
+# NatCidr empty - CWANAttachment, a plain attachment reached by its real addresses
+# NatCidr set   - CWANNatAttachment, which translates VpcCidr to NatCidr (1:1 NAT)
+# ============================================================================
+AWSTemplateFormatVersion: 2010-09-09
+Description: AWS Cloud WAN Blueprints - 1:1 NAT on attachments (VPC & workloads)
+Transform: 'AWS::LanguageExtensions'
+
+Parameters:
+  CoreNetworkArn:
+    Type: String
+  CoreNetworkId:
+    Type: String
+  VpcName:
+    Type: String
+    Description: Name of the VPC, used as a prefix when naming resources.
+  VpcCidr:
+    Type: String
+    Description: IPv4 CIDR of the VPC. It is split into six /28 subnets.
+  NatCidr:
+    Type: String
+    Default: ''
+    Description: NAT CIDR that VpcCidr is translated to, with the same prefix length. Empty to attach without NAT.
+  Segment:
+    Type: String
+    Default: corporate
+    Description: Value of the domain tag, which names the segment the attachment associates with.
+  LatestAmiId:
+    Type: "AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>"
+    Default: "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64"
+
+Conditions:
+  EnableNat: !Not [!Equals [!Ref NatCidr, '']]
+  DisableNat: !Equals [!Ref NatCidr, '']
+
+Mappings:
+  # Position of each subnet among the six /28 blocks carved from VpcCidr
+  SubnetIndex:
+    Endpoint:
+      a: 0
+      b: 1
+    Private:
+      a: 2
+      b: 3
+    CWAN:
+      a: 4
+      b: 5
+
+Resources:
+  # ---------- VPC ----------
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCidr
+      Tags:
+        - Key: Name
+          Value: !Sub '${VpcName}-vpc-${AWS::Region}'
+
+  # For::Each iteration: per subnet type (Endpoint, Private, CWAN) and AZ (2 AZs)
+  # Resources to create: 6 subnets, 6 route tables, 6 route table associations - obtaining AZ affinity
+  'Fn::ForEach::SubnetTypes':
+    - SubnetType
+    - [Endpoint, Private, CWAN]
+    - '${SubnetType}':
+      'Fn::ForEach::AZ':
+        - AvailabilityZone
+        - [a, b]
+          # Subnets
+        - '${SubnetType}Subnet${AvailabilityZone}':
+            Type: AWS::EC2::Subnet
+            Properties:
+              VpcId: !Ref VPC
+              AvailabilityZone: !Sub ${AWS::Region}${AvailabilityZone}
+              CidrBlock: !Select
+                - !FindInMap [SubnetIndex, !Ref SubnetType, !Ref AvailabilityZone]
+                - !Cidr [!Ref VpcCidr, 6, 4]
+              Tags:
+                - Key: Name
+                  Value: !Sub '${VpcName}-subnet-${SubnetType}-AZ${AvailabilityZone}'
+          # Route Tables
+          '${SubnetType}RouteTable${AvailabilityZone}':
+            Type: AWS::EC2::RouteTable
+            Properties:
+              VpcId: !Ref VPC
+              Tags:
+                - Key: Name
+                  Value: !Sub '${VpcName}-rt-${SubnetType}-AZ${AvailabilityZone}'
+          # Route Table associations
+          '${SubnetType}RouteTableAssociation${AvailabilityZone}':
+            Type: AWS::EC2::SubnetRouteTableAssociation
+            Properties:
+              RouteTableId: !Ref
+                'Fn::Sub': '${SubnetType}RouteTable${AvailabilityZone}'
+              SubnetId: !Ref
+                'Fn::Sub': '${SubnetType}Subnet${AvailabilityZone}'
+
+  # For::Each iteration: per Availability Zone
+  # Default route to the core network in the workload subnets (the VPC local route still wins for the VPC's own CIDR)
+  'Fn::ForEach::VPCRoutes':
+    - AvailabilityZone
+    - [a, b]
+    - 'DefaultRouteToCWAN${AvailabilityZone}':
+        DependsOn:
+          - AttachmentReady
+        Type: AWS::EC2::Route
+        Properties:
+          RouteTableId: !Ref
+            'Fn::Sub': 'PrivateRouteTable${AvailabilityZone}'
+          DestinationCidrBlock: 0.0.0.0/0
+          CoreNetworkArn: !Ref CoreNetworkArn
+
+  # AWS Cloud WAN attachment - VPC without 1:1 NAT
+  CWANAttachment:
+    Type: AWS::NetworkManager::VpcAttachment
+    Condition: DisableNat
+    Properties:
+      CoreNetworkId: !Ref CoreNetworkId
+      SubnetArns:
+        - !Sub 'arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:subnet/${CWANSubneta}'
+        - !Sub 'arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:subnet/${CWANSubnetb}'
+      VpcArn: !Sub 'arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:vpc/${VPC}'
+      Tags:
+        - Key: Name
+          Value: !Sub '${VpcName}-vpc-attachment-${AWS::Region}'
+        - Key: domain
+          Value: !Ref Segment
+
+  # AWS Cloud WAN attachment - VPC with 1:1 NAT (VpcCidr translated to NatCidr)
+  CWANNatAttachment:
+    Type: AWS::NetworkManager::VpcAttachment
+    Condition: EnableNat
+    Metadata:
+      cfn-lint:
+        config:
+          ignore_checks:
+            # The cfn-lint schema does not include NatGatewaySupport and NatGatewayRules yet.
+            # Both are documented properties of AWS::NetworkManager::VpcAttachment.
+            - E3002
+    Properties:
+      CoreNetworkId: !Ref CoreNetworkId
+      SubnetArns:
+        - !Sub 'arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:subnet/${CWANSubneta}'
+        - !Sub 'arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:subnet/${CWANSubnetb}'
+      VpcArn: !Sub 'arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:vpc/${VPC}'
+      NatGatewaySupport: ENABLE
+      NatGatewayRules:
+        - RuleNumber: 100
+          MatchSourceCidr: !Ref VpcCidr
+          NatCidr: !Ref NatCidr
+      Tags:
+        - Key: Name
+          Value: !Sub '${VpcName}-nat-attachment-${AWS::Region}'
+        - Key: domain
+          Value: !Ref Segment
+
+  # Whichever attachment the condition creates. The routes depend on this handle.
+  AttachmentReady:
+    Type: AWS::CloudFormation::WaitConditionHandle
+    Metadata:
+      AttachmentId: !If [EnableNat, !Ref CWANNatAttachment, !Ref CWANAttachment]
+
+  # Security Groups (Instances and EC2 Instance Connect endpoint)
+  InstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub '${VpcName} VPC - Instance Security Group'
+      VpcId: !Ref VPC
+
+  InstanceSecurityGroupIngressICMP:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref InstanceSecurityGroup
+      Description: Allow ICMP from anywhere, so cross-segment and cross-Region ping tests work
+      IpProtocol: icmp
+      FromPort: -1
+      ToPort: -1
+      CidrIp: 0.0.0.0/0
+
+  InstanceSecurityGroupIngressEIC:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref InstanceSecurityGroup
+      Description: Allowing EIC connection
+      IpProtocol: tcp
+      FromPort: 22
+      ToPort: 22
+      SourceSecurityGroupId: !Ref EndpointSecurityGroup
+
+  InstanceSecurityGroupEgress:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties:
+      GroupId: !Ref InstanceSecurityGroup
+      Description: Allowing egress traffic
+      IpProtocol: -1
+      CidrIp: 0.0.0.0/0
+
+  EndpointSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub '${VpcName} VPC - Endpoints Security Group'
+      VpcId: !Ref VPC
+
+  EndpointSecurityGroupEgressEIC:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties:
+      GroupId: !Ref EndpointSecurityGroup
+      Description: Allowing EIC connection
+      IpProtocol: tcp
+      FromPort: 22
+      ToPort: 22
+      DestinationSecurityGroupId: !Ref InstanceSecurityGroup
+
+  # For::Each iteration: per AZ (2 AZs)
+  # EC2 Instances
+  'Fn::ForEach::Instances':
+    - AvailabilityZone
+    - [a, b]
+    - 'Instance${AvailabilityZone}':
+        Type: AWS::EC2::Instance
+        Properties:
+          InstanceType: t2.micro
+          SecurityGroupIds:
+            - !Ref InstanceSecurityGroup
+          SubnetId: !Ref
+            'Fn::Sub': 'PrivateSubnet${AvailabilityZone}'
+          ImageId: !Ref LatestAmiId
+          Tags:
+            - Key: Name
+              Value: !Sub '${VpcName}-instance-${AvailabilityZone}'
+
+  # EC2 Instance Connect Endpoint
+  EICEndpoint:
+    Type: AWS::EC2::InstanceConnectEndpoint
+    Properties:
+      PreserveClientIp: false
+      SecurityGroupIds:
+        - !Ref EndpointSecurityGroup
+      SubnetId: !Ref EndpointSubneta
+      Tags:
+        - Key: Name
+          Value: !Sub '${VpcName}-eic'
+
+Outputs:
+  VpcId:
+    Description: VPC ID.
+    Value: !Ref VPC
+  AttachmentId:
+    Description: Cloud WAN VPC attachment ID.
+    Value: !If [EnableNat, !Ref CWANNatAttachment, !Ref CWANAttachment]
