@@ -16,7 +16,7 @@ See [the pattern README](../README.md) for what this builds, how its attachments
 
 | Template | Deploys | Region |
 |----------|---------|--------|
-| `core_network.yaml` | Global network, core network, and the policy | `us-east-1` |
+| `core_network.yaml` | Global network, core network and the policy, plus the core network's Cloud WAN Flow Logs with their CloudWatch Logs log group and delivery role | `us-west-2`, Cloud WAN's home Region |
 | `workloads.yaml` | Spoke VPC, EC2 instances, EC2 Instance Connect endpoint | Once per Region |
 | `hybrid.yaml` | Site-to-Site VPN and Direct Connect gateway attachments | `us-east-1` |
 
@@ -27,7 +27,7 @@ cd infra/4-hybrid/cloudformation
 make deploy
 ```
 
-That deploys the pattern with its working baseline policy: the core network first, then the workloads in both Regions. To take it a stack at a time, `make deploy-cloudwan` then `make deploy-workloads`.
+That deploys the pattern with its working baseline policy: the core network and its flow logs first, then the workloads in both Regions. Between the two it waits, typically several minutes, polling every 30 seconds: creating the flow log moves the core network to `UPDATING`, and Cloud WAN rejects new attachments with `Core network state is invalid` until it is `AVAILABLE` again. To take it a stack at a time, `make deploy-cloudwan`, `make wait-cloudwan`, then `make deploy-workloads`.
 
 The hybrid attachments are a separate stack and are off by default, because each needs a value only you can supply. Neither ASN may overlap the core network's `asn-ranges`, which the baseline sets to `64520-64525`.
 
@@ -54,4 +54,4 @@ cd infra/4-hybrid/cloudformation
 make undeploy
 ```
 
-That removes the hybrid stack and the workload stacks first, then the core network. The order matters: deleting a core network that still has attachments fails, and the error does not name the cause. To do it a stack at a time, `make undeploy-hybrid`, `make undeploy-workloads`, then `make undeploy-cloudwan`.
+That removes the hybrid stack and the workload stacks first, then the core network and its flow logs. The order matters: deleting a core network that still has attachments fails, and the error does not name the cause. To do it a stack at a time, `make undeploy-hybrid`, `make undeploy-workloads`, then `make undeploy-cloudwan`.

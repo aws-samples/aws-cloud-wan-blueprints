@@ -6,9 +6,12 @@
 # Change one and you must change the other - CI compares them and fails the build if they diverge.
 #
 # To deploy a policy of your own, copy this template rather than editing it
+#
+# Deploy this stack in us-west-2, AWS Cloud WAN's home Region. The global and core network are global resources, so the Region
+# only decides where the stack lives, but a flow log on a core network can only be created there.
 # ============================================================================
 AWSTemplateFormatVersion: 2010-09-09
-Description: AWS Cloud WAN Blueprints - Hybrid (global & core network)
+Description: AWS Cloud WAN Blueprints - Hybrid (global network, core network and its flow logs)
 
 Parameters:
   Identifier:
@@ -81,6 +84,64 @@ Resources:
             share-with:
               - hybrid
 
+  FlowLogGroup:
+    # checkov:skip=CKV_AWS_158:CloudWatch Logs encrypts log data at rest by default; a customer-managed KMS key is out of scope for a demo.
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/cloudwan/flow-logs/${Identifier}'
+      RetentionInDays: 7
+
+  # Role the flow logs service assumes to write to the log group. The conditions stop it being used on behalf of another account's flow logs.
+  FlowLogRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: vpc-flow-logs.amazonaws.com
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+              ArnLike:
+                aws:SourceArn: !Sub 'arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:vpc-flow-log/*'
+      Policies:
+        - PolicyName: publish-flow-logs
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - logs:DescribeLogStreams
+                Resource: !GetAtt FlowLogGroup.Arn
+              - Effect: Allow
+                Action: logs:DescribeLogGroups
+                Resource: '*'
+
+  # One subscription at core network level covers every attachment, in every Region, including the ones created later.
+  CoreNetworkFlowLog:
+    # cfn-lint 1.60.1 ships a resource schema that predates the Cloud WAN resource types. Remove this once cfn-lint accepts CoreNetwork.
+    Metadata:
+      cfn-lint:
+        config:
+          ignore_checks:
+            - E3030
+    Type: AWS::EC2::FlowLog
+    Properties:
+      ResourceType: CoreNetwork
+      ResourceId: !GetAtt CoreNetwork.CoreNetworkId
+      LogDestinationType: cloud-watch-logs
+      LogGroupName: !Ref FlowLogGroup
+      DeliverLogsPermissionArn: !GetAtt FlowLogRole.Arn
+      MaxAggregationInterval: 60
+      Tags:
+        - Key: Name
+          Value: !Sub 'flow-logs-${Identifier}'
+
 Outputs:
   CoreNetworkId:
     Description: Core Network ID.
@@ -88,3 +149,9 @@ Outputs:
   CoreNetworkArn:
     Description: Core Network ARN.
     Value: !GetAtt CoreNetwork.CoreNetworkArn
+  FlowLogId:
+    Description: Flow log ID.
+    Value: !Ref CoreNetworkFlowLog
+  FlowLogGroupName:
+    Description: CloudWatch Logs log group the records are published to, one log stream per attachment.
+    Value: !Ref FlowLogGroup
