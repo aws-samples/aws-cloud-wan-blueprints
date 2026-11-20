@@ -111,6 +111,7 @@ These are the constructs the blueprints compose — deliberately just enough voc
 | **Segment sharing** | Explicit, non-transitive route exchange between segments. See [segment sharing](./policy/4-segment_sharing.md). |
 | **Service insertion** | Sends traffic through inspection: `send-to` for egress (north-south), `send-via` for east-west, using network function groups. See [service insertion](./policy/5-service_insertion.md). |
 | **Routing policies** | Fine-grained route filtering, summarization, and path preference for advanced scenarios. See [routing policies](./policy/7-routing_policies.md) and [attachment routing-policy rules](./policy/9-attachment_routing_policy_rules.md). |
+| **Flow Logs** | A record of each flow where it enters and leaves the core network, with the segments, Regions and network function groups on its path: the path traffic actually took, where routing tables show only the paths it could take. Not part of the policy; it can be configured at the core network, core network edge, or attachment level. See [Flow Logs](./infra/README.md#flow-logs). |
 
 Cloud WAN's management plane lives in its home Region (`us-west-2`), and policy changes are staged as versioned change sets you review before executing. This table is not exhaustive — [`policy/README.md`](./policy/README.md) maps everything a policy can express, including static routes and edge-location associations — and for the authoritative detail of each construct, see the [AWS Cloud WAN documentation](https://docs.aws.amazon.com/network-manager/latest/cloudwan/what-is-cloudwan.html).
 
@@ -151,7 +152,7 @@ A: No, most patterns deploy in a single AWS account. [`infra/5-multi_account`](.
 
 **Q: Which IaC tool should I use?**
 
-A: Both CloudFormation and Terraform are supported for every infrastructure pattern. Choose based on your organization's preferences and existing tooling. Terraform patterns use the [AWS](https://registry.terraform.io/providers/hashicorp/aws/latest/docs) and [AWSCC](https://registry.terraform.io/providers/hashicorp/awscc/latest/docs) providers, while CloudFormation patterns use native AWS resources.
+A: Both CloudFormation and Terraform are supported for every infrastructure pattern. The one exception today is the core network's [flow logs](./infra/README.md#flow-logs), which only the CloudFormation patterns deploy until the `aws` or `awscc` provider supports them. Choose based on your organization's preferences and existing tooling. Terraform patterns use the [AWS](https://registry.terraform.io/providers/hashicorp/aws/latest/docs) and [AWSCC](https://registry.terraform.io/providers/hashicorp/awscc/latest/docs) providers, while CloudFormation patterns use native AWS resources.
 
 ## Security
 

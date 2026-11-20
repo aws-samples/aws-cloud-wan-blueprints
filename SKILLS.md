@@ -158,6 +158,7 @@ Most Cloud WAN designs go wrong on these specifics rather than on the architectu
 
 - Cloud WAN's control plane / home Region is **us-west-2**; the console lives under AWS Network Manager.
 - Bandwidth is a property of the **attachment**, not of the CNE, and for VPC attachments it is per Availability Zone. Scale a Region by adding or resizing attachments, not by adding CNEs; aggregate across VPN tunnels or Connect peers with ECMP. Check the [quotas page](https://docs.aws.amazon.com/network-manager/latest/cloudwan/cloudwan-quotas.html) for current figures before assuming headroom, and never quote them from memory.
+- [Cloud WAN Flow Logs](https://docs.aws.amazon.com/network-manager/latest/cloudwan/cwan-flow-logs.html) are created in the home Region, **us-west-2**, only, and only by the core network owner. Three levels: core network, edge (`<core-network-id>/<region>`) or attachment. Tunnel-less Connect flows appear on the transport VPC attachment and Transit Gateway route table attachment flows on the underlying peering. The aggregation interval is fixed at 60 seconds, there is no traffic type, and the 1:1 NAT fields (`src-nat-addr`, `dst-nat-addr`) need a custom log format. Creating a subscription moves the core network to `UPDATING`, and attachments created before it is `AVAILABLE` again fail with `Core network state is invalid`: create the flow log with the core network, then wait for `AVAILABLE` before attaching anything.
 - Cloud WAN does **not** solve overlapping CIDRs. It is IP routing; addresses must be unique, and unique addressing is the design to aim for. Where a network cannot be renumbered (an acquired or partner network), [1:1 NAT](https://docs.aws.amazon.com/network-manager/latest/cloudwan/cloudwan-nat.html) configured **on the attachment, not in the policy**, can translate one side into a unique range — an exception, not a substitute for an addressing plan. It is not supported on `transit-gateway-route-table` attachments or on a VPC attachment with appliance mode. If the need is service-level rather than network-level, VPC Lattice or PrivateLink avoid the overlap altogether.
 
 ---
@@ -231,7 +232,8 @@ Where to find what:
   observing it needs a third Region.
 - **Verification.** `list-core-network-routing-information` shows routing state *before*
   routing policies are applied. Use `get-network-routes` to prove a filter, summarization,
-  or path preference took effect.
+  or path preference took effect. To prove the path a flow actually took (segment, edge,
+  network function group), use Cloud WAN Flow Logs, which every CloudFormation pattern turns on.
 - **The change-set dry run.** Creating a policy version validates it server-side and
   changes nothing until executed. For anything going near a real network, recommend it.
 
