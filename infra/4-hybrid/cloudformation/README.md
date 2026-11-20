@@ -27,7 +27,7 @@ cd infra/4-hybrid/cloudformation
 make deploy
 ```
 
-That deploys the pattern with its working baseline policy: the core network and its flow logs first, then the workloads in both Regions. Between the two it waits, typically several minutes, polling every 30 seconds: creating the flow log moves the core network to `UPDATING`, and Cloud WAN rejects new attachments with `Core network state is invalid` until it is `AVAILABLE` again. To take it a stack at a time, `make deploy-cloudwan`, `make wait-cloudwan`, then `make deploy-workloads`.
+That deploys the pattern with its working baseline policy: the core network and its flow logs first, then the workloads in both Regions. Between the two it polls every 30 seconds until the core network is `AVAILABLE` again, typically several minutes; [Flow Logs](../../README.md#flow-logs) explains why. To take it a stack at a time, `make deploy-cloudwan`, `make wait-cloudwan`, then `make deploy-workloads`.
 
 The hybrid attachments are a separate stack and are off by default, because each needs a value only you can supply. Neither ASN may overlap the core network's `asn-ranges`, which the baseline sets to `64520-64525`.
 
