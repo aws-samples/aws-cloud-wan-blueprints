@@ -36,7 +36,7 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 # The policy version this repository standardises on.
-POLICY_VERSION = "2025.11"
+POLICY_VERSION = "2026.10"
 
 # Top-level keys a Cloud WAN policy document may contain. Unknown keys are reported as a
 # warning rather than an error: AWS has added top-level arrays after launch
