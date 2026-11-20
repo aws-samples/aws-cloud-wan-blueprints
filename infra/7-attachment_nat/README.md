@@ -24,6 +24,7 @@ In this pattern, we want to show how [1:1 NAT](https://docs.aws.amazon.com/netwo
 |-----------|---------------|
 | AWS Regions | `us-east-1`, `eu-west-1` |
 | AWS Cloud WAN resources | Global network & core network, with the Core Network Edge ASNs pinned to `64520` and `64521` |
+| Flow logs | [Cloud WAN Flow Logs](../README.md#flow-logs) for the whole core network, in a custom format that adds the 1:1 NAT addresses, published to CloudWatch Logs from `us-west-2` |
 | VPCs | `shared` (`10.0.0.0/16`, `us-east-1`, no NAT); `acquired-a` (`10.10.0.0/16`, `us-east-1`, NAT to `100.64.0.0/16`); `acquired-b` (`10.10.0.0/16`, `eu-west-1`, NAT to `100.65.0.0/16`) |
 | Site-to-Site VPN | Optional, in `us-east-1`, BGP-routed — a customer gateway, a VPN connection, and its Cloud WAN attachment, with on-premises `10.10.0.0/16` translated to `100.66.0.0/16` |
 
@@ -62,6 +63,12 @@ Resulting reachability:
 
 Translation is stateless and keeps the host bits: `10.10.0.37` in `acquired-a` is `100.64.0.37` to everyone else, and either side can start a connection.
 
+## Flow log format
+
+The [default flow log format](https://docs.aws.amazon.com/network-manager/latest/cloudwan/cwan-flow-logs.html) omits the 1:1 NAT fields and cannot be extended, so this pattern's [flow log](../README.md#flow-logs) uses a custom one: the default fields in the default order, with `${src-nat-addr} ${dst-nat-addr}` (the addresses after translation) added after `${srcaddr} ${dstaddr}` (the addresses before it).
+
+To add other fields, write the full list yourself in the order records should carry them. Fields after `dstaddr` sit two positions later than in the default format, and changing the format replaces the flow log.
+
 ## Verifying it works
 
 1. In the AWS Network Manager console, confirm the three VPC attachments are `AVAILABLE`: `acquired-a` and `acquired-b` associated with `corporate`, `shared` with `shared`.
@@ -77,6 +84,8 @@ Translation is stateless and keeps the host bits: `10.10.0.37` in `acquired-a` i
 3. Connect to an instance in `acquired-b` with EC2 Instance Connect and run `sudo tcpdump -ni any icmp`. From an instance in `acquired-a`, `ping` the `acquired-b` instance at its `100.65.x.x` address. The capture shows the source as `100.64.x.x`. From `shared`, the same ping arrives from its real `10.0.x.x` address.
 
 > **Deployed a policy of your own?** Step 1 still applies. Steps 2 and 3 describe the baseline: a NAT CIDR only reaches the segments your policy shares it with, and a routing policy that filters prefixes can remove it.
+
+**Flow logs.** In CloudWatch Logs in `us-west-2`, the log group `/aws/cloudwan/flow-logs/overlap` gets one log stream per attachment. Records arrive a few minutes after the core network is back to `AVAILABLE` (see [Flow Logs](../README.md#flow-logs)). A record is written at the attachment where a flow enters the core network and at the one where it leaves, and names the segments, Regions and attachment types on both sides. This pattern's flow log also records the 1:1 NAT addresses (see [Flow log format](#flow-log-format)): for the ping in step 3, the records carry the real `10.10.x.x` addresses and their `100.64.x.x` and `100.65.x.x` translations side by side, which ties a NAT address back to the host behind it.
 
 ### Hybrid attachments
 
@@ -113,5 +122,6 @@ For the rest, check the documentation: [supported attachment types](https://docs
 | Site-to-Site VPN attachment | 0 or 1 | Hourly, per attachment |
 | EC2 instance | One per configured Availability Zone of every VPC | Hourly |
 | EC2 Instance Connect endpoint | 3, one per VPC | Hourly |
+| Cloud WAN Flow Logs | 1, at core network level | No Cloud WAN charge; CloudWatch Logs vended-log ingestion and storage, per GB |
 
 Use a non-production account and run the cleanup steps in the IaC README when you are finished.
