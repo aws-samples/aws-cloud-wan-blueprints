@@ -23,6 +23,7 @@ In this pattern, we want to show how a core network is shared with other AWS acc
 | Component | Configuration |
 |-----------|---------------|
 | AWS Cloud WAN resources | Global network & core network, managed in `us-west-2` |
+| Flow logs | [Cloud WAN Flow Logs](../README.md#flow-logs) for the whole core network, in the default format, published to CloudWatch Logs from `us-west-2` |
 | AWS RAM resource share | Created in `us-east-1`, containing the core network |
 | Share principal | One AWS account, organizational unit, or organization — you choose which |
 
@@ -91,6 +92,8 @@ Resulting reachability, once a spoke account attaches a VPC:
 
 If an attachment is `AVAILABLE` but shows no segment, the spoke account's tags and the policy's attachment policies disagree — the most common Cloud WAN misconfiguration, and harder to spot across accounts because the tag is set by someone else. See [`policy/3-attachment_policies.md`](../../policy/3-attachment_policies.md).
 
+**Flow logs.** In CloudWatch Logs in `us-west-2`, the log group `/aws/cloudwan/flow-logs/multi-account` gets one log stream per attachment. Records arrive a few minutes after the core network is back to `AVAILABLE` (see [Flow Logs](../README.md#flow-logs)). A record is written at the attachment where a flow enters the core network and at the one where it leaves, and names the segments, Regions and attachment types on both sides. The flow log belongs to the core network owner, so it records the spoke accounts' attachments as well, with `src-account-id` and `dst-account-id` naming each side, and without anyone setting up VPC Flow Logs in those accounts.
+
 ## Cost
 
 | Resource | Count | Charged |
@@ -98,5 +101,6 @@ If an attachment is `AVAILABLE` but shows no segment, the spoke account's tags a
 | Core Network Edge | 2, one per edge location in the policy | Hourly |
 | AWS RAM resource share | 1 | **Free** |
 | Attachments | Created and paid for by the account that creates them | Hourly, per attachment |
+| Cloud WAN Flow Logs | 1, at core network level | No Cloud WAN charge; CloudWatch Logs vended-log ingestion and storage, per GB |
 
 Use a non-production account and run the cleanup steps in the IaC README when you are finished.
