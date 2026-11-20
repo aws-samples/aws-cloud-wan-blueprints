@@ -16,9 +16,8 @@ OREGON          ?= us-west-2
 CORE_REGION     ?= $(OREGON)
 CORE_STACK      ?= core-network-$(IDENTIFIER)
 
-# Override to deploy a core network with your own policy without editing the
-# generated template: copy core_network.yaml, paste your policy under PolicyDocument,
-# then `make deploy-cloudwan CORE_TEMPLATE=my_core_network.yaml`.
+# Override to deploy a core network with your own policy without editing the generated template:
+# copy core_network.yaml, paste your policy under PolicyDocument, then `make deploy-cloudwan CORE_TEMPLATE=my_core_network.yaml`.
 CORE_TEMPLATE   ?= core_network.yaml
 NVIRGINIA_STACK ?= $(IDENTIFIER)-nvirginia
 IRELAND_STACK   ?= $(IDENTIFIER)-ireland
@@ -29,8 +28,6 @@ deploy-cloudwan:
 	aws cloudformation deploy --stack-name $(CORE_STACK) --template-file $(CORE_TEMPLATE) --parameter-overrides Identifier="$(IDENTIFIER)" --capabilities CAPABILITY_IAM --no-fail-on-empty-changeset --region $(CORE_REGION)
 
 # Creating the flow log moves the core network to UPDATING, and attachments cannot be created until it is AVAILABLE again.
-# The stack completes before that, so wait on the core network itself. Do not wait on the flow log: it can stay PROVISIONING
-# until there are attachments to deliver logs from, which are created after this.
 wait-cloudwan: CORENETWORK_ID = $(shell aws cloudformation describe-stacks --stack-name "$(CORE_STACK)" --query 'Stacks[0].Outputs[?OutputKey == `CoreNetworkId`].OutputValue' --output text --region $(CORE_REGION))
 wait-cloudwan:
 	@for i in $$(seq 1 60); do \

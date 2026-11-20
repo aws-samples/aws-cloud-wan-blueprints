@@ -24,6 +24,7 @@ In this pattern, we want to show a simple AWS Cloud WAN implementation - focusin
 |-----------|---------------|
 | AWS Regions | `us-east-1`, `eu-west-1` |
 | AWS Cloud WAN resources | Global network & core network |
+| Flow logs | [Cloud WAN Flow Logs](../README.md#flow-logs) for the whole core network, in the default format, published to CloudWatch Logs from `us-west-2` |
 | Spoke VPCs | Three per Region — `prod`, `dev`, `shared` — each with three subnet tiers, one of them for the Cloud WAN attachment |
 | Compute | An EC2 instance in every configured Availability Zone, plus an EC2 Instance Connect endpoint per VPC |
 
@@ -70,6 +71,8 @@ Resulting reachability:
 
 If an attachment is `AVAILABLE` but shows no segment, the `domain` tag and the policy's attachment policies disagree — the most common Cloud WAN misconfiguration. See [`policy/3-attachment_policies.md`](../../policy/3-attachment_policies.md).
 
+**Flow logs.** In CloudWatch Logs in `us-west-2`, the log group `/aws/cloudwan/flow-logs/basic` gets one log stream per attachment. Records arrive a few minutes after the core network is back to `AVAILABLE` (see [Flow Logs](../README.md#flow-logs)). A record is written at the attachment where a flow enters the core network and at the one where it leaves, and names the segments, Regions and attachment types on both sides. A cross-Region `prod` ping shows its ingress record in `us-east-1` and its egress record in `eu-west-1`, both with `production` as the segment.
+
 ## Cost
 
 | Resource | Count | Charged |
@@ -78,5 +81,6 @@ If an attachment is `AVAILABLE` but shows no segment, the `domain` tag and the p
 | VPC attachment | 6 | Hourly, per attachment |
 | EC2 instance | One per configured Availability Zone of every VPC | Hourly |
 | EC2 Instance Connect endpoint | 6, one per VPC | Hourly |
+| Cloud WAN Flow Logs | 1, at core network level | No Cloud WAN charge; CloudWatch Logs vended-log ingestion and storage, per GB |
 
 Use a non-production account and run the cleanup steps in the IaC README when you are finished.
