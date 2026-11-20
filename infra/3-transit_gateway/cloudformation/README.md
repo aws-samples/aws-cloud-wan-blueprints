@@ -26,7 +26,7 @@ cd infra/3-transit_gateway/cloudformation
 make deploy
 ```
 
-That deploys the pattern with its working baseline policy: the core network and its flow logs first, then the workloads in both Regions. Between the two it waits, typically several minutes, polling every 30 seconds: creating the flow log moves the core network to `UPDATING`, and Cloud WAN rejects new attachments with `Core network state is invalid` until it is `AVAILABLE` again. To take it a stack at a time, `make deploy-cloudwan`, `make wait-cloudwan`, then `make deploy-workloads`.
+That deploys the pattern with its working baseline policy: the core network and its flow logs first, then the workloads in both Regions. Between the two it polls every 30 seconds until the core network is `AVAILABLE` again, typically several minutes; [Flow Logs](../../README.md#flow-logs) explains why. To take it a stack at a time, `make deploy-cloudwan`, `make wait-cloudwan`, then `make deploy-workloads`.
 
 > **Using a policy of your own?** CloudFormation needs the policy **inline** in the template — `PolicyDocument` takes JSON with no file or S3 option, and a stack parameter caps at 4,096 bytes — so instead of pointing at a different file you deploy a different template. `core_network.yaml` has to keep matching [`../baseline.json`](../baseline.json), which CI compares, so copy it rather than editing it.
 
