@@ -17,7 +17,7 @@ See [the pattern README](../README.md) for what this builds, why two Regions are
 
 | Template | Deploys | Region |
 |----------|---------|--------|
-| `core_network.yaml` | Global network, core network, and the policy | `us-west-2` |
+| `core_network.yaml` | Global network, core network, and the policy, plus the core network's Cloud WAN Flow Logs with their CloudWatch Logs log group and delivery role | `us-west-2` |
 | `ram_share.yaml` | The AWS RAM resource share of the core network | `us-east-1` |
 
 ## Deploy
@@ -27,7 +27,7 @@ cd infra/5-multi_account/cloudformation
 make deploy PRINCIPAL=111122223333
 ```
 
-That deploys the pattern with its working baseline policy: the core network first, then the share. To take it a stack at a time, `make deploy-cloudwan` then `make deploy-share PRINCIPAL=...`.
+That deploys the pattern with its working baseline policy: the core network and its flow logs first, then the share. Between the two it polls every 30 seconds until the core network is `AVAILABLE` again, typically several minutes, so no spoke account sees the core network before it can attach; [Flow Logs](../../README.md#flow-logs) explains why. To take it a stack at a time, `make deploy-cloudwan`, `make wait-cloudwan`, then `make deploy-share PRINCIPAL=...`. The flow logs record traffic from the spoke accounts' attachments too, with no flow logs set up in those accounts.
 
 `PRINCIPAL` is required and `PRINCIPAL_TYPE` defaults to `account`. To share with an organizational unit or a whole organization, set both:
 
@@ -53,4 +53,4 @@ cd infra/5-multi_account/cloudformation
 make undeploy
 ```
 
-That removes the share first, then the core network. A core network with attachments from a spoke account cannot be deleted, and the error does not name the cause, so every spoke account has to remove its attachments before this succeeds. To do it a stack at a time, `make undeploy-share` then `make undeploy-cloudwan`.
+That removes the share first, then the core network and its flow logs. A core network with attachments from a spoke account cannot be deleted, and the error does not name the cause, so every spoke account has to remove its attachments before this succeeds. To do it a stack at a time, `make undeploy-share`, then `make undeploy-cloudwan`.

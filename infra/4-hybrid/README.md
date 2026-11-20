@@ -26,6 +26,7 @@ In this pattern, we want to show how AWS Cloud WAN integrates with AWS Site-to-S
 |-----------|---------------|
 | AWS Regions | `us-east-1`, `eu-west-1` |
 | AWS Cloud WAN resources | Global network & core network, with the Core Network Edge ASNs pinned to `64520` and `64521` |
+| Flow logs | [Cloud WAN Flow Logs](../README.md#flow-logs) for the whole core network, in the default format, published to CloudWatch Logs from `us-west-2` |
 | Spoke VPCs | One per Region, each with three subnet tiers, one of them for the Cloud WAN attachment |
 | Site-to-Site VPN | Optional, in `us-east-1` — a customer gateway, a VPN connection, and its Cloud WAN attachment |
 | Direct Connect gateway | Optional — the direct connect gateway and its Cloud WAN attachment, which reaches both Core Network Edges |
@@ -71,6 +72,8 @@ Only the first row is testable here — the other two describe what the policy p
 
 If an attachment is `AVAILABLE` but shows no segment, the policy's attachment policies do not match it. Because this pattern associates on attachment type rather than on a tag, check the `attachment-type` conditions rather than looking for a missing tag. See [`policy/3-attachment_policies.md`](../../policy/3-attachment_policies.md).
 
+**Flow logs.** In CloudWatch Logs in `us-west-2`, the log group `/aws/cloudwan/flow-logs/hybrid` gets one log stream per attachment. Records arrive a few minutes after the core network is back to `AVAILABLE` (see [Flow Logs](../README.md#flow-logs)). A record is written at the attachment where a flow enters the core network and at the one where it leaves, and names the segments, Regions and attachment types on both sides. Traffic to and from on-premises appears on the Site-to-Site VPN or Direct Connect gateway attachment, with `src-attachment-type` or `dst-attachment-type` showing which.
+
 ## Cost
 
 | Resource | Count | Charged |
@@ -83,5 +86,6 @@ If an attachment is `AVAILABLE` but shows no segment, the policy's attachment po
 | Direct Connect gateway attachment | 0 or 1 | Hourly, per attachment |
 | EC2 instance | One per configured Availability Zone of every VPC | Hourly |
 | EC2 Instance Connect endpoint | 2, one per VPC | Hourly |
+| Cloud WAN Flow Logs | 1, at core network level | No Cloud WAN charge; CloudWatch Logs vended-log ingestion and storage, per GB |
 
 Use a non-production account and run the cleanup steps in the IaC README when you are finished.

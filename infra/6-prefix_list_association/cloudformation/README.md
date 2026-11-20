@@ -14,7 +14,7 @@ See [the pattern README](../README.md) for what this builds, why two policy docu
 
 | Template | Deploys | Region |
 |----------|---------|--------|
-| `core_network.yaml` | Global network, core network, and the policy **without** the prefix list alias | `us-west-2` |
+| `core_network.yaml` | Global network, core network, and the policy **without** the prefix list alias, plus the core network's Cloud WAN Flow Logs with their CloudWatch Logs log group and delivery role | `us-west-2` |
 | `prefix_list.yaml` | The managed prefix list and its association with the core network | `us-west-2` |
 | `core_network_prefix_list.yaml` | The same core network stack, with the policy that **does** reference the alias | `us-west-2` |
 
@@ -25,10 +25,11 @@ cd infra/6-prefix_list_association/cloudformation
 make deploy
 ```
 
-That runs the three phases in order. To take them one at a time:
+That runs the three phases in order. Between phases 1 and 2 it polls every 30 seconds until the core network is `AVAILABLE` again, typically several minutes; [Flow Logs](../../README.md#flow-logs) explains why. To take them one at a time:
 
 ```bash
-make deploy-cloudwan      # phase 1 - core network, policy without the alias
+make deploy-cloudwan      # phase 1 - core network and flow logs, policy without the alias
+make wait-cloudwan
 make deploy-prefix-list   # phase 2 - prefix list + association
 make deploy-policy        # phase 3 - same stack, policy with the alias
 ```
@@ -50,12 +51,12 @@ cd infra/6-prefix_list_association/cloudformation
 make undeploy
 ```
 
-That reverses the three phases, and the first step is to put the policy **without** the alias back:
+That reverses the three phases, starting by putting the policy **without** the alias back. The flow logs go with the core network stack, last:
 
 ```bash
 make revert-policy         # policy stops referencing the alias
 make undeploy-prefix-list  # association and prefix list can now be deleted
-make undeploy-cloudwan
+make undeploy-cloudwan     # core network and its flow logs
 ```
 
 The revert is not optional. An association cannot be deleted while a live policy still matches on its alias — the same dependency as on the way up, in reverse.

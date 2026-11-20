@@ -6,16 +6,16 @@
 # NOTE: the policy in core_network.yaml must match ../baseline.json; CI compares them.
 # To deploy a policy of your own, copy the template and pass CORE_TEMPLATE
 
-.PHONY: deploy deploy-cloudwan deploy-share outputs undeploy undeploy-share undeploy-cloudwan
+.PHONY: deploy deploy-cloudwan wait-cloudwan deploy-share outputs undeploy undeploy-share undeploy-cloudwan
 
 IDENTIFIER      ?= multi-account
+# The core network stack lives in AWS Cloud WAN's home Region, the only Region its flow logs can be created in.
 OREGON          ?= us-west-2
 NVIRGINIA       ?= us-east-1
 CORE_STACK      ?= core-network-$(IDENTIFIER)
 
-# Override to deploy a core network with your own policy without editing the
-# generated template: copy core_network.yaml, paste your policy under PolicyDocument,
-# then `make deploy-cloudwan CORE_TEMPLATE=my_core_network.yaml`.
+# Override to deploy a core network with your own policy without editing the generated template:
+# copy core_network.yaml, paste your policy under PolicyDocument, then `make deploy-cloudwan CORE_TEMPLATE=my_core_network.yaml`.
 CORE_TEMPLATE   ?= core_network.yaml
 SHARE_STACK     ?= core-network-share-$(IDENTIFIER)
 
@@ -23,10 +23,21 @@ SHARE_STACK     ?= core-network-share-$(IDENTIFIER)
 # organization; PRINCIPAL is a 12-digit account ID or an AWS Organizations ARN.
 PRINCIPAL_TYPE  ?= account
 
-deploy: deploy-cloudwan deploy-share
+deploy: deploy-cloudwan wait-cloudwan deploy-share
 
 deploy-cloudwan:
-	aws cloudformation deploy --stack-name $(CORE_STACK) --template-file $(CORE_TEMPLATE) --parameter-overrides Identifier="$(IDENTIFIER)" --no-fail-on-empty-changeset --region $(OREGON)
+	aws cloudformation deploy --stack-name $(CORE_STACK) --template-file $(CORE_TEMPLATE) --parameter-overrides Identifier="$(IDENTIFIER)" --capabilities CAPABILITY_IAM --no-fail-on-empty-changeset --region $(OREGON)
+
+# Creating the flow log moves the core network to UPDATING, and spoke accounts cannot attach until it is AVAILABLE again, so wait before sharing it.
+wait-cloudwan: CORENETWORK_ID = $(shell aws cloudformation describe-stacks --stack-name "$(CORE_STACK)" --query 'Stacks[0].Outputs[?OutputKey == `CoreNetworkId`].OutputValue' --output text --region $(OREGON))
+wait-cloudwan:
+	@for i in $$(seq 1 60); do \
+		state=$$(aws networkmanager get-core-network --core-network-id "$(CORENETWORK_ID)" --query 'CoreNetwork.State' --output text --region $(OREGON)); \
+		echo "Core network $$state"; \
+		if [ "$$state" = "AVAILABLE" ]; then exit 0; fi; \
+		sleep 30; \
+	done; \
+	echo "Timed out after 30 minutes waiting for the core network to be AVAILABLE"; exit 1
 
 deploy-share: CORENETWORK_ARN = $(shell aws cloudformation describe-stacks --stack-name "$(CORE_STACK)" --query 'Stacks[0].Outputs[?OutputKey == `CoreNetworkArn`].OutputValue' --output text --region $(OREGON))
 deploy-share:

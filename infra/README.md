@@ -1,6 +1,6 @@
 ---
 title: "Deploy AWS Cloud WAN with CloudFormation or Terraform: the pattern catalog"
-description: "The deployable AWS Cloud WAN patterns in this repository, organised by which attachment types each one creates, with the prerequisites for each and how to choose between them. Includes how to point a pattern at a network policy of your own, what to edit to deploy into different Regions, and the tag contract that associates attachments to segments."
+description: "The deployable AWS Cloud WAN patterns in this repository, organised by which attachment types each one creates, with the prerequisites for each and how to choose between them. Includes how to point a pattern at a network policy of your own, what to edit to deploy into different Regions, the tag contract that associates attachments to segments, and the core network flow logs every pattern turns on."
 ---
 
 # Infrastructure as Code resources
@@ -31,11 +31,12 @@ When you do need to change the infrastructure, the change is usually small and l
 
 - **Another Region, or different ones.** See [Regions](#regions).
 - **Different tags, or binding by type instead.** See [How attachments are associated](#how-attachments-are-associated).
+- **Flow logs at another level, or to another destination.** See [Flow Logs](#flow-logs).
 - **A piece from a second pattern.** Nothing stops you combining them, and the patterns are deliberately shaped so you can.
 
 ## Prerequisites
 
-- An **AWS account** with permissions for Network Manager, EC2 (VPCs, subnets, instances, endpoints), and IAM.
+- An **AWS account** with permissions for Network Manager, EC2 (VPCs, subnets, instances, endpoints), CloudWatch Logs, and IAM.
   - `2-inspection` also needs Network Firewall.
   - `3-transit_gateway` also needs Transit Gateway.
   - `4-hybrid` also needs Site-to-Site VPN and Direct Connect. Each is independently optional, and the Direct Connect gateway attachment needs a real circuit to carry traffic.
@@ -69,6 +70,8 @@ Where the resources actually live differs, because two patterns create no attach
 | `1-basic`, `2-inspection`, `3-transit_gateway`, `4-hybrid`, `7-attachment_nat` | `us-east-1`, `eu-west-1` | Matches the edge locations |
 | `5-multi_account` | `us-east-1` and `us-west-2` | A global resource can only be shared through AWS RAM from `us-east-1` |
 | `6-prefix_list_association` | `us-west-2` | An associated prefix list has to live in AWS Cloud WAN's home Region |
+
+Every pattern also creates its [flow logs](#flow-logs) in `us-west-2`.
 
 **To add a Region, or use different ones**, put it in the policy's `edge-locations` and then follow the infrastructure that attaches to the core network. For `5-multi_account` and `6-prefix_list_association` the policy is the only change. For the other five:
 
@@ -113,3 +116,23 @@ Where a pattern binds by tag it always works the same way: the rule matches `tag
 Both methods are shipped deliberately, and the choice generalises. **Tag when the destination is a choice:** a VPC could reasonably belong to any segment, so something has to say which. **Match the type when the type is the intent:** a Direct Connect gateway attachment is hybrid by definition, so a tag would only add something to get wrong. `4-hybrid` binds everything by type to stay consistent within the pattern.
 
 Changing the scheme? [`3-attachment_policies.md`](../policy/3-attachment_policies.md) covers how association logic maps onto tags. If the tags and the policy disagree, attachments still deploy and reach `AVAILABLE` — they simply associate to nothing, and no routes propagate.
+
+## Flow Logs
+
+[AWS Cloud WAN Flow Logs](https://docs.aws.amazon.com/network-manager/latest/cloudwan/cwan-flow-logs.html) record the IP traffic crossing a core network. A subscription can be created at three levels:
+
+| Level | Resource type | Records |
+|-------|---------------|---------|
+| Core network | `CoreNetwork` | Every attachment in every Region, including attachments created later |
+| Core network edge | `CoreNetworkEdge` | The attachments in one Region |
+| Attachment | `CoreNetworkAttachment` | One attachment |
+
+**Every pattern enables flow logs at core network level**, as part of the core network stack, publishing to a CloudWatch Logs log group. This is a blueprint decision, not a best practice: one subscription gives visibility across the whole network with nothing to configure per Region or per attachment. For another level or another destination, see the [Flow Logs documentation](https://docs.aws.amazon.com/network-manager/latest/cloudwan/cwan-flow-logs.html).
+
+> [!NOTE]
+> **Flow logs are not in the Terraform implementations yet.** Neither the `aws` nor the `awscc` Terraform provider supports flow logs on a core network, so the Terraform implementations deploy every pattern without them. They will be added as soon as either provider supports them.
+
+- **Subscriptions are created from `us-west-2` only**, Cloud WAN's home Region, whichever edge locations the policy declares.
+- **The 1:1 NAT fields are not in the default format.** [`7-attachment_nat`](./7-attachment_nat/README.md#flow-log-format) sets a custom format to record them.
+
+> **Wait for the core network to be `AVAILABLE` before creating attachments.** Creating a subscription moves the core network to `UPDATING`, and attachments created meanwhile fail with `Core network state is invalid`. The patterns wait on the core network state, not on the flow log status, which can stay `PROVISIONING` for a while.

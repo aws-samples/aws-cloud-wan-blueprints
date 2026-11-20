@@ -202,6 +202,7 @@ These are properties of the service, not of this repository. State them the same
 | Cloud WAN home Region | `us-west-2` |
 | Control-plane console | AWS Network Manager |
 | Managed prefix lists referenced by routing policies | MUST be created in `us-west-2`, regardless of where edge locations are |
+| Cloud WAN Flow Logs subscriptions | MUST be created in `us-west-2`, regardless of where edge locations are |
 | Throughput | A property of the **attachment**, not of the CNE. You scale a Region by adding or resizing attachments |
 | Core Network Edge (CNE) cost | Charged **per hour** from the moment the policy declares it, attached or not |
 

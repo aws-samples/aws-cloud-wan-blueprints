@@ -24,6 +24,7 @@ In this pattern, we want to show how AWS Cloud WAN connects to AWS Transit Gatew
 |-----------|---------------|
 | AWS Regions | `us-east-1`, `eu-west-1` |
 | AWS Cloud WAN resources | Global network & core network |
+| Flow logs | [Cloud WAN Flow Logs](../README.md#flow-logs) for the whole core network, in the default format, published to CloudWatch Logs from `us-west-2` |
 | Transit Gateway | One per Region, ASN `64532` and `64533`, with default route table association and propagation disabled |
 | Transit Gateway route tables | Two per Region — `production`, `development` |
 | Cloud WAN peering | One per Region, between the Transit Gateway and the core network, with a Transit Gateway policy table associated with it |
@@ -103,6 +104,8 @@ If an attachment is `AVAILABLE` but shows no segment, the `domain` tag and the p
 
 If cross-Region traffic fails while the attachments look correct, check that the Transit Gateway route table has a route for the remote prefix through the peering attachment.
 
+**Flow logs.** In CloudWatch Logs in `us-west-2`, the log group `/aws/cloudwan/flow-logs/transit-gateway` gets one log stream per attachment. Records arrive a few minutes after the core network is back to `AVAILABLE` (see [Flow Logs](../README.md#flow-logs)). A record is written at the attachment where a flow enters the core network and at the one where it leaves, and names the segments, Regions and attachment types on both sides. Transit Gateway route table attachments get no log stream of their own: flows that cross them are recorded on the underlying Transit Gateway peering.
+
 ## Cost
 
 | Resource | Count | Charged |
@@ -113,5 +116,6 @@ If cross-Region traffic fails while the attachments look correct, check that the
 | Core Network Edge | 2, one per Region | Hourly |
 | EC2 instance | One per configured Availability Zone of every VPC | Hourly |
 | EC2 Instance Connect endpoint | 4, one per VPC | Hourly |
+| Cloud WAN Flow Logs | 1, at core network level | No Cloud WAN charge; CloudWatch Logs vended-log ingestion and storage, per GB |
 
 Use a non-production account and run the cleanup steps in the IaC README when you are finished.
