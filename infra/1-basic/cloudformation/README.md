@@ -16,7 +16,7 @@ See [the pattern README](../README.md) for what this builds, the attachment tags
 
 | Template | Deploys | Region |
 |----------|---------|--------|
-| `core_network.yaml` | Global network, core network, and the policy | `us-east-1` |
+| `core_network.yaml` | Global network, core network and the policy, plus the core network's Cloud WAN Flow Logs with their CloudWatch Logs log group and delivery role | `us-west-2`, Cloud WAN's home Region |
 | `workloads.yaml` | Spoke VPCs, EC2 instances, EC2 Instance Connect endpoint | Once per Region |
 
 ## Deploy
@@ -26,7 +26,7 @@ cd infra/1-basic/cloudformation
 make deploy
 ```
 
-That deploys the pattern with its working baseline policy: the core network first, then the workloads in both Regions. To take it a stack at a time, `make deploy-cloudwan` then `make deploy-workloads`.
+That deploys the pattern with its working baseline policy: the core network and its flow logs first, then the workloads in both Regions. Between the two it waits, typically several minutes, polling every 30 seconds: creating the flow log moves the core network to `UPDATING`, and Cloud WAN rejects new attachments with `Core network state is invalid` until it is `AVAILABLE` again. To take it a stack at a time, `make deploy-cloudwan`, `make wait-cloudwan`, then `make deploy-workloads`.
 
 > **Using a policy of your own?** CloudFormation needs the policy **inline** in the template — `PolicyDocument` takes JSON with no file or S3 option, and a stack parameter caps at 4,096 bytes — so instead of pointing at a different file you deploy a different template. `core_network.yaml` has to keep matching [`../baseline.json`](../baseline.json), which CI compares, so copy it rather than editing it.
 
@@ -37,4 +37,4 @@ cd infra/1-basic/cloudformation
 make undeploy
 ```
 
-That removes the workload stacks first, then the core network. The order matters: deleting a core network that still has attachments fails, and the error does not name the cause. To do it a stack at a time, `make undeploy-workloads` then `make undeploy-cloudwan`.
+That removes the workload stacks first, then the core network and its flow logs. The order matters: deleting a core network that still has attachments fails, and the error does not name the cause. To do it a stack at a time, `make undeploy-workloads`, then `make undeploy-cloudwan`.
