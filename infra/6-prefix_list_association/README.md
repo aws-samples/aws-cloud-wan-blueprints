@@ -21,6 +21,7 @@ In this pattern, we want to show how a managed prefix list is associated with a 
 | Component | Configuration |
 |-----------|---------------|
 | AWS Cloud WAN resources | Global network & core network, managed in `us-west-2` |
+| Flow logs | [Cloud WAN Flow Logs](../README.md#flow-logs) for the whole core network, in the default format, published to CloudWatch Logs from `us-west-2` |
 | Managed prefix list | One, in `us-west-2`, containing `10.100.0.0/16` and `192.168.0.0/16` |
 | Prefix list association | Associates that prefix list with the core network under the alias `routesfiltered` |
 | Policy documents | **Two.** One to create the core network with, one to attach afterwards |
@@ -114,6 +115,8 @@ which asks for a core network to be *created* with the policy that names the ali
 
 > **Deployed a policy of your own?** Steps 1 and 2 still apply. Step 3 is the interesting one either way: whatever your policy references, the alias has to be associated before the policy that names it is applied. That ordering is a property of Cloud WAN, not of this blueprint.
 
+**Flow logs.** In CloudWatch Logs in `us-west-2`, the log group `/aws/cloudwan/flow-logs/prefix-list` gets one log stream per attachment. Records arrive a few minutes after the core network is back to `AVAILABLE` (see [Flow Logs](../README.md#flow-logs)). A record is written at the attachment where a flow enters the core network and at the one where it leaves, and names the segments, Regions and attachment types on both sides. This pattern creates no attachments, so no log streams appear until you attach something.
+
 ## Cost
 
 | Resource | Count | Charged |
@@ -121,5 +124,6 @@ which asks for a core network to be *created* with the policy that names the ali
 | Core Network Edge | 2, one per edge location in the policy | Hourly |
 | Managed prefix list | 1 | **Free** |
 | Prefix list association | 1 | **Free** |
+| Cloud WAN Flow Logs | 1, at core network level | No Cloud WAN charge; CloudWatch Logs vended-log ingestion and storage, per GB |
 
-The two Core Network Edges are the entire bill, and they exist as soon as the policy declares its edge locations, whether or not anything is attached. Prefix lists and their associations cost nothing, so the only way to make this pattern cheaper is fewer edge locations. Use a non-production account and run the cleanup steps in the IaC README when you are finished.
+The two Core Network Edges are effectively the entire bill (with no attachments the flow log records nothing), and they exist as soon as the policy declares its edge locations, whether or not anything is attached. Prefix lists and their associations cost nothing, so the only way to make this pattern cheaper is fewer edge locations. Use a non-production account and run the cleanup steps in the IaC README when you are finished.
