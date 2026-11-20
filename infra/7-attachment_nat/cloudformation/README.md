@@ -16,7 +16,7 @@ See [the pattern README](../README.md) for what this builds, the NAT rules and t
 
 | Template | Deploys | Region |
 |----------|---------|--------|
-| `core_network.yaml` | Global network, core network, and the policy | `us-east-1` |
+| `core_network.yaml` | Global network, core network and the policy, plus the core network's Cloud WAN Flow Logs in a custom format that adds the NAT addresses with their CloudWatch Logs log group and delivery role | `us-west-2`, Cloud WAN's home Region |
 | `workloads.yaml` | The VPCs of one Region, each with its Cloud WAN attachment, EC2 instances and EC2 Instance Connect endpoint: the acquired VPC with a NAT attachment (`AcquiredCWANAttachment`), plus the `shared` VPC with a plain one (`SharedCWANAttachment`) where `SharedVpcCIDR` has an entry for the Region | Once per Region: `shared` and `acquired-a` in `us-east-1`, `acquired-b` in `eu-west-1` |
 | `vpn.yaml` | Customer gateway, BGP VPN connection, and its Cloud WAN attachment with NAT | `us-east-1` |
 
@@ -27,7 +27,7 @@ cd infra/7-attachment_nat/cloudformation
 make deploy
 ```
 
-That deploys the pattern with its working baseline policy: the core network first, then the workloads in both Regions. To take it a stack at a time, `make deploy-cloudwan` then `make deploy-workloads`. The VPC CIDRs and NAT CIDRs are in the `SharedVpcCIDR` and `AcquiredVpcCIDR` mappings of `workloads.yaml`, keyed by Region.
+That deploys the pattern with its working baseline policy: the core network and its flow logs first, then the workloads in both Regions. Between the two it waits, typically several minutes, polling every 30 seconds: creating the flow log moves the core network to `UPDATING`, and Cloud WAN rejects new attachments with `Core network state is invalid` until it is `AVAILABLE` again. To take it a stack at a time, `make deploy-cloudwan`, `make wait-cloudwan`, then `make deploy-workloads`. The VPC CIDRs and NAT CIDRs are in the `SharedVpcCIDR` and `AcquiredVpcCIDR` mappings of `workloads.yaml`, keyed by Region.
 
 The VPN is a separate stack and is off by default, because it needs values only you can supply. The customer gateway ASN must not overlap the core network's `asn-ranges`, which the baseline sets to `64520-64525`:
 
@@ -46,4 +46,4 @@ cd infra/7-attachment_nat/cloudformation
 make undeploy
 ```
 
-That removes the VPN stack and the workload stacks first, then the core network. The order matters: deleting a core network that still has attachments fails, and the error does not name the cause. To do it a stack at a time, `make undeploy-vpn`, `make undeploy-workloads`, then `make undeploy-cloudwan`.
+That removes the VPN stack and the workload stacks first, then the core network and its flow logs. The order matters: deleting a core network that still has attachments fails, and the error does not name the cause. To do it a stack at a time, `make undeploy-vpn`, `make undeploy-workloads`, then `make undeploy-cloudwan`.
