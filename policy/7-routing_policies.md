@@ -415,6 +415,8 @@ Rules `200` and `300` are what restrict the advertisement to the summary. Rule `
 
 > **Omit rule `200` and this policy advertises nothing at all.** `summarize` is non-terminal, so the aggregate it produces carries on down the rules and a catch-all `drop` below it matches and removes it. The prefixes are withdrawn, the summary is dropped, and the peer receives an empty advertisement — with nothing rejected at policy-validation time and no error anywhere to explain it. Whenever a `summarize` and a catch-all `drop` are in the same policy, the `allow` between them is mandatory. The general form of this rule, covering the BGP attribute actions too, is in [Running rules inside one policy](#rule-number-running-rules-inside-one-policy).
 
+**A summary does not keep the attributes of the routes it replaces.** It is advertised as a new route with [MED `100`, local preference `0`, an empty AS path and no communities](https://docs.aws.amazon.com/network-manager/latest/cloudwan/cloudwan-routing-policies.html), so prepends or communities set on the specific routes are lost. Because `summarize` is not terminal, a later rule in the same policy can set what the summary needs.
+
 This is commonly associated at the attachment scope — see [`9-attachment_routing_policy_rules.md`](./9-attachment_routing_policy_rules.md) for how. On a Direct Connect gateway the shape above is needed once per Region, scoped with `edge-locations`, for the reason immediately below.
 
 #### Direct Connect gateway needs one summary per Region, scoped with `edge-locations`
@@ -469,7 +471,7 @@ In this example, hybrid attachments in `us-east-1` and `eu-west-1` advertise the
 
 In hybrid environments, an on-premises router can advertise routes for several routing domains through one BGP peer and tag each set with a BGP community. Routing policies expose each tagged set only to its intended segment, reducing the need for separate BGP peers solely to preserve route segmentation.
 
-> **Direct Connect cannot use this pattern.** A Direct Connect gateway strips BGP communities between the virtual interface and the core network, so those tags cannot drive Cloud WAN routing policies.
+> **On Direct Connect, only standard communities arrive.** [Standard communities sent over a transit virtual interface are preserved across the Direct Connect gateway; large communities (RFC 8092), extended communities such as route targets, and communities whose first value is an AWS-reserved ASN (`7224`, `10124`, `17493`, `9059`, `4001`) are removed](https://docs.aws.amazon.com/directconnect/latest/UserGuide/direct-connect-cloud-wan.html). The Direct Connect gateway also selects one best path per prefix before advertising it, so when the same prefix arrives over several virtual interfaces with different communities, only the best path's communities reach the core network.
 
 In this example, the on-premises router advertises test and development routes through one BGP peer. Routes tagged `65051:100` belong to the test domain. This policy admits those routes, then drops every untagged or differently tagged route:
 

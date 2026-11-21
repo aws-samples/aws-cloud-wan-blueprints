@@ -34,7 +34,7 @@ A required top-level key. There are three accepted values, and the choice is a c
 
 AWS Cloud WAN picks the preferred Region, and the documentation does not say how. Read the result instead of predicting it: for a segment, the default MED shows per prefix and edge location in the routing information base ([`list-core-network-routing-information`](./7-routing_policies.md#get-network-routes-versus-list-core-network-routing-information-verify-policy-effects-with-the-right-api) or the console). On earlier versions, [route evaluation](https://docs.aws.amazon.com/network-manager/latest/cloudwan/cloudwan-route-evaluation.html) calls the choice between such routes "deterministically random".
 
-- **Segments:** override it with an [edge location routing policy](./8-edge_location_associations.md#pin-a-cross-region-path-before-upgrading-to-202610). Prefer `set-local-preference` over `set-med`: it is compared first, so it wins whatever the default MED is. Do this wherever the path matters (latency, egress cost, a stateful firewall).
+- **Segments:** override it with an [edge location routing policy](./8-edge_location_associations.md#edge-location-association). Prefer `set-local-preference` over `set-med`: it is compared first, so it wins whatever the default MED is. Do this wherever the path matters (latency, egress cost, a stateful firewall).
 - **Network function groups:** you can neither see nor override it.
 
 ### Upgrading between versions
@@ -44,7 +44,7 @@ Move **one version at a time**: `2021.12` → `2025.11` → `2026.10`. Each step
 | Step | What changes | Before you update |
 |------|--------------|-------------------|
 | `2021.12` → `2025.11` | Communities from BGP-capable attachments propagate across the core network and back out (subtype dropped in transit, set to Route Target outbound). Routing policies become available. | List the communities your routers send: they now reach other Regions and sites. Check on-premises policies that match on community values or subtypes. |
-| `2025.11` → `2026.10` | Destinations with tied routes through more than one Region get a default MED, and traffic to them can **shift Region once**, when the update takes effect. | Pin the tied destinations whose path matters with an [edge location routing policy](./8-edge_location_associations.md#pin-a-cross-region-path-before-upgrading-to-202610), **while still on `2025.11`**. Paths through a network function group cannot be pinned. |
+| `2025.11` → `2026.10` | Destinations with tied routes through more than one Region get a default MED, and traffic to them can **shift Region once**, when the update takes effect. | Pin the tied destinations whose path matters with an [edge location routing policy](./8-edge_location_associations.md#edge-location-association), **while still on `2025.11`**. Paths through a network function group cannot be pinned. Test any routing policy rule that matches on `med-equals`: the documentation does not say whether it evaluates the default MED. |
 
 For each step:
 
