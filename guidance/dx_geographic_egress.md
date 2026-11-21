@@ -24,8 +24,6 @@ Using **one DXGW per geography** fixes that: each geography's copy of the route 
 1. **Keep every exit usable from every Region.** [An edge advertises its local routes only toward associated DXGW attachments](https://docs.aws.amazon.com/network-manager/latest/cloudwan/cloudwan-dxattach-about.html), so each DXGW must be associated with every edge location. Otherwise, the remote on-premises routers do not learn the return routes they need when traffic fails over across geographies.
 2. **Prefer the local exit without removing the remote exits.** Associating every DXGW everywhere means each edge learns the same routes from all of them. The routing policy must make the local path win at each edge while leaving the remote paths installed.
 
-These goals are linked: global association provides cross-geography reachability but creates equally viable routes, and a Region-scoped routing policy breaks that tie without taking the failover paths away.
-
 ## The design
 
 | Part | What it does |
@@ -37,7 +35,7 @@ These goals are linked: global association provides cross-geography reachability
 
 Because the community identifies the geography, the routing policies never need to know which DXGW a route arrived on. Every DXGW attachment carries the same **routing-policy label**, which selects the attachments a rule applies to. The rule's `edge-locations` then selects the CNEs where it applies. Each policy is named for what it does: `addEuropeASPath` lengthens the routes tagged Europe and is attached at the Asia-Pacific CNEs, so they prefer the untouched Asia-Pacific routes; `addAPJASPath` does the opposite at the European CNEs. The rules stay at one per geography.
 
-### `direct-connect-gateway` attachments: one per geography, associated everywhere — the setup, not yet the solution
+### `direct-connect-gateway` attachments: one per geography, associated everywhere
 
 Keeping each geography's VIFs on its own DXGW gives you one Cloud WAN attachment per geographic exit. Associating every attachment with **all** edge locations provides both halves of failover:
 
@@ -53,11 +51,11 @@ Global association solves reachability, not preference. Each CNE now learns the 
 0.0.0.0/0  via dxgw-apj     AS_PATH [65001, 65552]
 ```
 
-Neither path says "Europe." A later tie-break chooses the winner, and the result may happen to look geographic even though no policy enforces it. The next steps remove that ambiguity.
+Neither path says "Europe." A later tie-break chooses the winner, and the result may happen to look geographic even though no policy enforces it.
 
 ### `community-in-list` and `prepend-asn-list`: identify the geography by its tag, rank exits by AS_PATH length
 
-**Step 1: tag the routes on-premises.** Each geography's routers add one community, unique to that geography, to everything they announce over Direct Connect. This example uses `65052:100` for Europe and `65052:200` for Asia-Pacific. Pick a scheme that Direct Connect preserves: standard communities only, with an ASN you own in the first position — never one of the core network's [`asn-ranges`](../policy/1-core_network_version_configuration.md#asn-ranges) or an [ASN reserved by AWS](https://docs.aws.amazon.com/directconnect/latest/UserGuide/direct-connect-cloud-wan.html).
+**Step 1: tag the routes on-premises.** Each geography's routers add one community, unique to that geography, to everything they announce over Direct Connect. This example uses `65052:100` for Europe and `65052:200` for Asia-Pacific. Pick a scheme that Direct Connect preserves: standard communities only, with an ASN you own in the first position — never an [ASN reserved by AWS](https://docs.aws.amazon.com/directconnect/latest/UserGuide/direct-connect-cloud-wan.html), and never one of the core network's [`asn-ranges`](../policy/1-core_network_version_configuration.md#asn-ranges), which [Cloud WAN will not advertise in a community](https://docs.aws.amazon.com/network-manager/latest/cloudwan/cloudwan-routing-policies.html).
 
 Every router in a geography, on every VIF, must set the same tag. For example router configurations, see [Tag routes on-premises](#tag-routes-on-premises) in the annex.
 
@@ -151,17 +149,14 @@ Plan this sequence carefully in a multi-account deployment. [With a cross-accoun
 
 ## Constraints that bite here
 
-- **Direct Connect preserves only some communities.** [Standard communities sent over the transit VIF reach the core network; large communities (RFC 8092), extended communities such as route targets, and communities whose first value is an AWS-reserved ASN (`7224`, `10124`, `17493`, `9059`, `4001`) are removed](https://docs.aws.amazon.com/directconnect/latest/UserGuide/direct-connect-cloud-wan.html). A removed tag fails silently: the route arrives untagged, matches no rule, and falls back to the tie-break. Use standard communities for the geography tags.
-- **One DXGW carries one geography's tag per prefix.** The DXGW keeps only its best path's communities, so putting two geographies' VIFs on one DXGW loses one geography's identity before Cloud WAN sees it.
-- **An untagged route, or an unlabeled attachment, matches nothing, silently.** A router that skips the `set community`, and an attachment without its [routing-policy label](../policy/9-attachment_routing_policy_rules.md#creation-time-dependency), both deploy cleanly while ranking nothing. Route selection then falls back to the tie-break and may still look correct by coincidence. Always verify.
-- **Community values must not contain an ASN the core network uses.** [ASNs in community tags cannot overlap the core network's `asn-ranges`, and you cannot advertise communities containing an ASN in use by the core network](https://docs.aws.amazon.com/network-manager/latest/cloudwan/cloudwan-routing-policies.html). The same applies to prepended ASNs.
+- **An untagged route, or an unlabeled attachment, matches nothing, silently.** A router that skips the `set community`, a tag that [Direct Connect removes](../policy/7-routing_policies.md#community-in-list-filtering-routes-by-bgp-community), and an attachment without its [routing-policy label](../policy/9-attachment_routing_policy_rules.md#creation-time-dependency) all deploy cleanly while ranking nothing. Route selection then falls back to the tie-break and may still look correct by coincidence. Always verify.
 - **A new Region has to be added in two places.** Add the edge location to the DXGW attachments, then add the Region to the `edge-locations` list of the rule for its geography. If you stop after the first step, the new CNE learns every DXGW's routes but [has no scoped rule to distinguish them](../policy/9-attachment_routing_policy_rules.md#edge-locations).
 
 ## Verification
 
 This design can appear correct even when the policy did not bind, so verify the inputs, the control plane and the failover behavior separately.
 
-**1. Confirm the tags arrive.** The [routing information base](https://docs.aws.amazon.com/network-manager/latest/cloudwan/cloudwan-visualize-networks-core.html) shows every route candidate with its BGP attributes, communities included, before routing policies are applied — which is exactly the view you need here: each DXGW's routes should carry their geography's community. A route that arrives without it was never tagged or had its tag removed by Direct Connect, and no policy will rank it.
+**1. Confirm the tags arrive.** The [routing information base](https://docs.aws.amazon.com/network-manager/latest/cloudwan/cloudwan-visualize-networks-core.html) shows every route candidate with its BGP attributes, communities included, before routing policies are applied: each DXGW's routes should carry their geography's community. A route that arrives without it was never tagged or had its tag removed by Direct Connect, and no policy will rank it.
 
 ```bash
 aws networkmanager list-core-network-routing-information \
@@ -246,7 +241,7 @@ Another option is one routing-policy label per DXGW, `dxAttachmentEurope` and `d
 Whichever way you identify the geography, the action that ranks the routes can also be:
 
 - **`set-local-preference`.** [Local preference is compared before AS_PATH length](https://docs.aws.amazon.com/network-manager/latest/cloudwan/cloudwan-route-evaluation.html), so the ranking holds even when the paths' AS_PATHs differ in length for reasons unrelated to geography. Set an explicit value for every tag, for example `300` for the local geography and `200` for the remote one, so the result never depends on a default.
-- **`set-med`.** MED is compared after local preference and AS_PATH length, so it decides only when both are equal. It is the weakest lever of the three, and on policy [`version`](../policy/1-core_network_version_configuration.md#which-region-a-cne-prefers-from-202610) `2026.10` cross-Region routes also carry a default MED that AWS Cloud WAN sets.
+- **`set-med`.** MED is compared after local preference and AS_PATH length, so it decides only when both are equal. It is the weakest of the three ranking actions, and on policy [`version`](../policy/1-core_network_version_configuration.md#which-region-a-cne-prefers-from-202610) `2026.10` cross-Region routes also carry a default MED that AWS Cloud WAN sets.
 
 Use one ranking action per design. Mixing them on the same routes makes the outcome depend on which attribute is compared first, not on the values you chose.
 

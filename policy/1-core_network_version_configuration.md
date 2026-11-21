@@ -20,38 +20,38 @@ A required top-level key. There are three accepted values, and the choice is a c
 | Version | Adds | Changes in behaviour |
 |---------|------|----------------------|
 | `2021.12` | Segments, segment sharing, attachment policies, service insertion | — |
-| `2025.11` | **Routing policies** | **BGP communities propagate** from BGP-capable attachments across the core network instead of being discarded. Their subtype is dropped in transit and set to Route Target outbound, so check anything on-premises that matches on subtypes |
-| `2026.10` | — | **Ties between cross-Region routes are broken** with a default MED (Multi-Exit Discriminator): when routes through several Regions have equal local preference and AS path length and you set no preference, each CNE prefers one connected Region. See [below](#which-region-a-cne-prefers-from-202610) |
+| `2025.11` | **Routing policies** | **BGP communities propagate** from BGP-capable attachments across the core network instead of being discarded |
+| `2026.10` | — | **Every cross-Region route carries a default MED** (Multi-Exit Discriminator), so when the same destination is reachable through several Regions with equal local preference and AS path length, each CNE prefers one of them. See [below](#which-region-a-cne-prefers-from-202610) |
 
 ```json
 { "version": "2026.10" }
 ```
 
 > [!TIP]
-> **This repository recommends `2026.10` for a new core network:** starting lower buys nothing and costs you a migration later.
+> **We recommend `2026.10` for a new core network:** starting lower buys nothing and costs you a migration later.
 
 ### Which Region a CNE prefers from `2026.10`
 
-AWS Cloud WAN picks the preferred Region, and the documentation does not say how. Read the result instead of predicting it: for a segment, the default MED shows per prefix and edge location in the routing information base ([`list-core-network-routing-information`](./7-routing_policies.md#get-network-routes-versus-list-core-network-routing-information-verify-policy-effects-with-the-right-api) or the console). On earlier versions, [route evaluation](https://docs.aws.amazon.com/network-manager/latest/cloudwan/cloudwan-route-evaluation.html) calls the choice between such routes "deterministically random".
+AWS Cloud WAN sets the default MED on routes a CNE learns from another Region's CNE. Because local preference and AS path length are compared first, the MED decides only between routes that tie on both, such as one prefix originating in two Regions. Before you rely on which Region wins, read the MED that each edge location receives from every other Region in the routing information base ([`list-core-network-routing-information`](./7-routing_policies.md#get-network-routes-versus-list-core-network-routing-information-verify-policy-effects-with-the-right-api) or the console), and pin the path wherever it matters, as below. On earlier versions, [route evaluation](https://docs.aws.amazon.com/network-manager/latest/cloudwan/cloudwan-route-evaluation.html) calls the choice between such routes "deterministically random".
 
 - **Segments:** override it with an [edge location routing policy](./8-edge_location_associations.md#edge-location-association). Prefer `set-local-preference` over `set-med`: it is compared first, so it wins whatever the default MED is. Do this wherever the path matters (latency, egress cost, a stateful firewall).
 - **Network function groups:** you can neither see nor override it.
 
 ### Upgrading between versions
 
-Move **one version at a time**: `2021.12` → `2025.11` → `2026.10`. Each step then carries one documented behaviour change, so you know which step moved what, and the change set stays small enough to read. Schedule each step like any other network change.
+Move **one version at a time**: `2021.12` → `2025.11` → `2026.10`. Each step then carries one documented behaviour change, so you know which step moved what, and the change set stays small enough to read.
 
 | Step | What changes | Before you update |
 |------|--------------|-------------------|
 | `2021.12` → `2025.11` | Communities from BGP-capable attachments propagate across the core network and back out (subtype dropped in transit, set to Route Target outbound). Routing policies become available. | List the communities your routers send: they now reach other Regions and sites. Check on-premises policies that match on community values or subtypes. |
-| `2025.11` → `2026.10` | Destinations with tied routes through more than one Region get a default MED, and traffic to them can **shift Region once**, when the update takes effect. | Pin the tied destinations whose path matters with an [edge location routing policy](./8-edge_location_associations.md#edge-location-association), **while still on `2025.11`**. Paths through a network function group cannot be pinned. Test any routing policy rule that matches on `med-equals`: the documentation does not say whether it evaluates the default MED. |
+| `2025.11` → `2026.10` | Cross-Region routes get a default MED. Traffic to a destination reachable through more than one Region with equal local preference and AS path length can **shift Region once**, when the update takes effect. | Pin the tied destinations whose path matters with an [edge location routing policy](./8-edge_location_associations.md#edge-location-association), **while still on `2025.11`**. Paths through a network function group cannot be pinned. Test any routing policy rule that matches on `med-equals`. |
 
 For each step:
 
 1. **Snapshot** every segment and edge location: `get-network-routes` for the routes each CNE installs, `list-core-network-routing-information` for their attributes (communities, MED).
-2. **Prepare on the current version**, as the table says. For `2026.10`, a tie candidate is a prefix learned from more than one remote edge location with equal local preference and AS path length; deploy the pins as their own policy version and confirm them before you touch `version`.
+2. **Prepare on the current version.** For `2026.10`, a tie candidate is a prefix that originates in more than one Region (attached or advertised in each) and reaches a CNE with equal local preference and AS path length. Find candidates from where prefixes originate, then confirm each one in the routing information base. Deploy the pins as their own policy version and confirm them before you touch `version`.
 3. **Change only `version`**, then [create the policy version and read its change set](./README.md#validating-a-policy) before executing it; nothing changes until you do.
-4. **Compare against the snapshot.** After `2025.11`, installed routes should not change; communities appear in the routing information base. After `2026.10`, only tied destinations you did not pin should change next hop, and they carry a default MED. Investigate anything else, and leave the core network on the new version for at least one normal change cycle before the next step.
+4. **Compare against the snapshot.** After `2025.11`, installed routes should not change; communities appear in the routing information base. After `2026.10`, every cross-Region route carries a default MED, and only tied destinations you did not pin should change next hop. Investigate anything else, and leave the core network on the new version for at least one normal change cycle before the next step.
 
 ## `core-network-configuration`
 
@@ -151,7 +151,7 @@ You get exactly one CNE per Region per core network, and that is not adjustable 
 
 ### `multipath-resilience`
 
-[Multipath resilience](https://docs.aws.amazon.com/network-manager/latest/cloudwan/enable-multipath-resilience-cloudwan.html) replicates packets over several paths on the AWS backbone between Region pairs, which is how AWS Cloud WAN can achieve a [99.999% daily uptime SLA](https://aws.amazon.com/vpc/features/vpc-multipath-resilience/sla) for that traffic. To decide whether your workloads need it, see the [multipath resilience feature page](https://aws.amazon.com/vpc/features/vpc-multipath-resilience/).
+[Multipath resilience](https://docs.aws.amazon.com/network-manager/latest/cloudwan/enable-multipath-resilience-cloudwan.html) replicates packets over several paths on the AWS backbone between Region pairs, which is how AWS Cloud WAN can achieve a [99.999% daily uptime SLA](https://aws.amazon.com/vpc/features/vpc-multipath-resilience/sla) for [the workloads that need it](https://aws.amazon.com/vpc/features/vpc-multipath-resilience/).
 
 > [!IMPORTANT]
 > **Every Region pair it covers costs extra.** You pay a [per-GB charge on data sent between CNEs in different Regions](https://aws.amazon.com/cloud-wan/pricing/), on top of Cloud WAN data processing and inter-Region data transfer; data received is not charged. Use `edge-sets` to limit it to the pairs that need the SLA.
@@ -161,7 +161,7 @@ You get exactly one CNE per Region per core network, and that is not adjustable 
 | `mode` | `best-effort` turns it on, `disabled` turns it off | Yes, if the block is present | Off: leaving the block out is the same as `disabled` |
 | `edge-sets` | Limits it to the Region pairs listed. Each set names two Regions in `edge-locations`, in either order, and covers both directions. Both must be declared in [`edge-locations`](#edge-locations) and be supported, or the policy version fails validation | No | Every supported pair |
 
-`best-effort` is about coverage, not delivery. Multipath resilience only works between supported Regions ([current list](https://docs.aws.amazon.com/network-manager/latest/cloudwan/enable-multipath-resilience-cloudwan.html)). `best-effort` turns it on for every pair of CNEs whose two Regions are supported, or only for the pairs in `edge-sets`, and leaves every other pair as it is: no replication, no SLA, no extra charge. A covered pair gets the full SLA.
+`best-effort` covers every pair of CNEs whose two Regions are [supported](https://docs.aws.amazon.com/network-manager/latest/cloudwan/enable-multipath-resilience-cloudwan.html), or only the pairs in `edge-sets`. Other pairs get no replication, no SLA and no extra charge; a covered pair gets the full SLA.
 
 **Cover every supported pair.** Every pair of these CNEs whose two Regions are supported is covered; a pair with an unsupported Region is skipped:
 
