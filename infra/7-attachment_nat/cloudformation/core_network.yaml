@@ -37,7 +37,7 @@ Resources:
         - Key: Name
           Value: !Sub 'core-network-${Identifier}'
       PolicyDocument:
-        version: "2025.11"
+        version: "2026.10"
         core-network-configuration:
           vpn-ecmp-support: false
           asn-ranges:

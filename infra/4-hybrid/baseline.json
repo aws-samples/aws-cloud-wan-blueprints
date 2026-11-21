@@ -1,5 +1,5 @@
 {
-  "version": "2025.11",
+  "version": "2026.10",
   "core-network-configuration": {
     "vpn-ecmp-support": true,
     "dns-support": true,
