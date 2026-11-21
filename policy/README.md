@@ -13,7 +13,7 @@ The pages follow the structure of a policy document. Use them to understand the 
 
 | Page | Produces | What it covers |
 |------|----------|----------------|
-| [`1-core_network_version_configuration.md`](./1-core_network_version_configuration.md) | `core-network-configuration` | Edge locations, ASN ranges, ECMP, DNS support, and security-group referencing |
+| [`1-core_network_version_configuration.md`](./1-core_network_version_configuration.md) | `core-network-configuration` | Edge locations, ASN ranges, multipath resilience, ECMP, DNS support, and security-group referencing |
 | [`2-segments-and-nfg.md`](./2-segments-and-nfg.md) | `segments` | Global routing domains, isolation, Region scope, and attachment acceptance |
 | [`3-attachment_policies.md`](./3-attachment_policies.md) | `attachment-policies` | How attachments join segments or network function groups |
 | [`4-segment_sharing.md`](./4-segment_sharing.md) | `segment-actions` (`share`) | Route exchange between segments |

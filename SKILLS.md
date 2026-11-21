@@ -65,7 +65,7 @@ Learn these seven constructs; almost every Cloud WAN design is a composition of 
 
 - **Global network** — the outermost container. Holds the core network plus (optionally) on-premises inventory for monitoring. One per organization is typical.
 - **Core network** — the managed global network itself, defined entirely by its **network policy**. Contains the routers, segments, and routing behaviour.
-- **Core network policy** — the declarative JSON document that defines everything: `core-network-configuration` (ASN ranges, edge locations, ECMP/DNS/security-group-referencing settings), `segments`, `network-function-groups`, `segment-actions`, `attachment-policies`, and `routing-policies`. Versioned, change-set-gated, diffable.
+- **Core network policy** — the declarative JSON document that defines everything: `core-network-configuration` (ASN ranges, edge locations, multipath resilience, ECMP/DNS/security-group-referencing settings), `segments`, `network-function-groups`, `segment-actions`, `attachment-policies`, and `routing-policies`. Versioned, change-set-gated, diffable.
 - **Core Network Edge (CNE)** — the regional router, conceptually similar to a Transit Gateway. One per Region you list as an `edge-location`. Highly available within the Region. CNEs are **automatically full-mesh peered** with each other and exchange routes via **e-BGP**, which is the single biggest operational difference from Transit Gateway. Each CNE gets an ASN from the `asn-ranges` you declare (or one you pin per edge location).
 - **Segment** — a **global** routing domain: one route table replicated across every Region that has a CNE, analogous to a TGW route table or a VRF. Properties worth knowing:
   - Present in every CNE Region by default; can be restricted to a subset of Regions.
@@ -145,18 +145,22 @@ Most Cloud WAN designs go wrong on these specifics rather than on the architectu
 
 - **Not supported for NFGs / service insertion.** You cannot attach a routing policy to an inspection flow. The workaround is to filter at the **attachment** layer *before* traffic enters the inspection path.
 - **VPC attachments do not support BGP attribute modification** — no AS_PATH/MED/local-pref games on a VPC attachment. VPC attachments are effectively inbound-filter-only.
-- **Summarization is outbound only, and only on BGP-capable attachments** (Site-to-Site VPN, Connect, Direct Connect gateway, TGW peering, CNE-to-CNE).
-- **No BGP community support on Direct Connect and TGW peering attachments.**
+- **Summarization is outbound only, and only on BGP-capable attachments** (Site-to-Site VPN, Connect, Direct Connect gateway, TGW peering). **Not between CNEs:** a policy with a `summarize` rule in an edge location association is rejected at validation (`SUMMARIZE_NOT_ALLOWED_FOR_EDGE_LOCATION_ASSOCIATION`), although the routing policies documentation lists CNE-to-CNE routes as supported.
+- **A summary does not keep the attributes of the routes it replaces:** it is advertised with MED `100`, local preference `0`, an empty AS path and no communities. Set what it needs with a later rule in the same policy (`summarize` is not terminal).
+- **No BGP community support on TGW peering attachments. Direct Connect supports them with restrictions:** only standard communities sent over the transit VIF arrive — large and extended communities, and any whose first value is an AWS-reserved ASN (`7224`, `10124`, `17493`, `9059`, `4001`), are removed — and a Direct Connect gateway keeps only the best path's communities for each prefix.
 - Policies applied across segments and Regions are **unidirectional** — declare both directions if you need both.
 - ASNs used in a routing policy (replace/remove ASN, community tags) **must not overlap** the core network's own `asn-ranges`.
 - **Replace-ASN is not supported cross-Region** (CNE-to-CNE).
 - **Segment share policies are applied after attachment policies.**
 - **`list-core-network-routing-information` shows routing state BEFORE routing policies are applied.** Do not use it to prove that a filter worked; use `get-network-routes` (or the console route view) for the post-policy state.
+- **On policy version `2026.10` or later, every cross-Region route carries a default MED**, so a prefix reachable through several Regions with equal local preference and AS path length goes to one of them. Read the MED each edge location receives from every other Region in the routing information base before relying on which one wins, and pin a path that matters with an edge location routing policy using `set-local-preference`. NFG routes cannot be seen or overridden.
+- **Upgrading `2025.11` → `2026.10` can shift tied traffic to another Region once.** Find tie candidates from where prefixes originate and confirm them in the routing information base, pin them on `2025.11`, then change `version`; test any rule matching `med-equals` first, since the documentation does not say whether it evaluates the default MED.
 - Prefix list aliases must be unique per core-network prefix-list association, and managed prefix lists referenced by routing policies must live in Cloud WAN's home Region, **us-west-2**.
 
 **General**
 
 - Cloud WAN's control plane / home Region is **us-west-2**; the console lives under AWS Network Manager.
+- **Recommend policy version `2026.10` for new core networks, and upgrading existing ones one version at a time** (`2021.12` → `2025.11` → `2026.10`), each as its own policy version with the change set read first; see [the upgrade steps](./policy/1-core_network_version_configuration.md#upgrading-between-versions).
 - Bandwidth is a property of the **attachment**, not of the CNE, and for VPC attachments it is per Availability Zone. Scale a Region by adding or resizing attachments, not by adding CNEs; aggregate across VPN tunnels or Connect peers with ECMP. Check the [quotas page](https://docs.aws.amazon.com/network-manager/latest/cloudwan/cloudwan-quotas.html) for current figures before assuming headroom, and never quote them from memory.
 - [Cloud WAN Flow Logs](https://docs.aws.amazon.com/network-manager/latest/cloudwan/cwan-flow-logs.html) are created in the home Region, **us-west-2**, only, and only by the core network owner. Three levels: core network, edge (`<core-network-id>/<region>`) or attachment. Tunnel-less Connect flows appear on the transport VPC attachment and Transit Gateway route table attachment flows on the underlying peering. The aggregation interval is fixed at 60 seconds, there is no traffic type, and the 1:1 NAT fields (`src-nat-addr`, `dst-nat-addr`) need a custom log format. Creating a subscription moves the core network to `UPDATING`, and attachments created before it is `AVAILABLE` again fail with `Core network state is invalid`: create the flow log with the core network, then wait for `AVAILABLE` before attaching anything.
 - Cloud WAN does **not** solve overlapping CIDRs. It is IP routing; addresses must be unique, and unique addressing is the design to aim for. Where a network cannot be renumbered (an acquired or partner network), [1:1 NAT](https://docs.aws.amazon.com/network-manager/latest/cloudwan/cloudwan-nat.html) configured **on the attachment, not in the policy**, can translate one side into a unique range — an exception, not a substitute for an addressing plan. It is not supported on `transit-gateway-route-table` attachments or on a VPC attachment with appliance mode. If the need is service-level rather than network-level, VPC Lattice or PrivateLink avoid the overlap altogether.
@@ -317,6 +321,10 @@ Flag **sections**, not the document: name the policy part next to each flag (`se
 - [Good to have] Is expansion into more Regions likely? Adding one later is a policy
   change, not a rebuild. Default: size the ASN ranges generously, which costs nothing.
   (`asn-ranges`.)
+- [Good to have] Does any traffic between two Regions need a 99.999% availability SLA?
+  Multipath resilience replicates it across backbone paths, only in supported Regions,
+  and bills per GB sent between covered pairs. Default: off; if on, scope it to the
+  pairs that need it. (`multipath-resilience`.)
 
 **Addressing**
 
@@ -517,6 +525,9 @@ pages are the source, and worth reading in full.
 - [ ] Every segment referenced by a segment action or attachment policy is declared
 - [ ] Every network function group referenced is declared
 - [ ] Every Region in `with-edge-overrides` is a declared edge location
+- [ ] A `multipath-resilience` block sits inside `core-network-configuration`, sets
+      `mode`, and every Region in its `edge-sets` is a declared edge location in a
+      [supported Region](https://docs.aws.amazon.com/network-manager/latest/cloudwan/enable-multipath-resilience-cloudwan.html)
 - [ ] Every routing policy name referenced is declared
 - [ ] Rule numbers are unique within each numbered array
 - [ ] ASNs used by a routing policy do not overlap the core network's `asn-ranges` — [and
@@ -540,9 +551,14 @@ misbehave, which is why they are worth a second pass.
 - [ ] No routing policy is attached to a network function group — [routing policies are not
       supported for NFGs](https://docs.aws.amazon.com/network-manager/latest/cloudwan/cloudwan-routing-policies.html), so filter at the attachment layer instead
 - [ ] `summarize` actions are `outbound` and target BGP-capable attachments — [summarization
-      works outbound only](https://docs.aws.amazon.com/network-manager/latest/cloudwan/cloudwan-routing-policies.html)
-- [ ] BGP communities are not expected on Direct Connect or Transit Gateway peering
-      attachments, which [do not support them](https://docs.aws.amazon.com/network-manager/latest/cloudwan/cloudwan-routing-policies.html)
+      works outbound only](https://docs.aws.amazon.com/network-manager/latest/cloudwan/cloudwan-routing-policies.html) — and no
+      policy with a `summarize` rule is named in an `associate-routing-policy` edge-pair association,
+      which fails validation
+- [ ] BGP communities are not expected on Transit Gateway peering attachments, which [do
+      not support them](https://docs.aws.amazon.com/network-manager/latest/cloudwan/cloudwan-routing-policies.html); on Direct Connect, matched communities are standard ones
+      with no AWS-reserved ASN in the first position, and a prefix that must carry different
+      tags on different paths uses separate Direct Connect gateways — [only the best path's
+      communities are preserved](https://docs.aws.amazon.com/directconnect/latest/UserGuide/direct-connect-cloud-wan.html)
 - [ ] No BGP attribute modification is aimed at a VPC attachment — [VPC attachments do not
       support it](https://docs.aws.amazon.com/network-manager/latest/cloudwan/cloudwan-routing-policies.html)
 - [ ] Prefix lists referenced by a routing policy are [created in the Cloud WAN home Region,
@@ -678,7 +694,7 @@ not:
 
 | Value | JSON | YAML | Why |
 |-------|------|------|-----|
-| Policy version | `"2025.11"` | `version: "2025.11"` | Unquoted it becomes the float `2025.11` and the policy is rejected |
+| Policy version | `"2026.10"` | `version: "2026.10"` | Unquoted it becomes the float `2026.1` and the policy is rejected |
 | A tag **value** that reads as a boolean | `"value": "true"` | `value: "true"` | Unquoted it becomes the boolean `true`, the condition stops matching the string tag, and **attachments silently never associate** |
 | A real boolean | `"isolate-attachments": true` | `isolate-attachments: true` | Genuinely a boolean — do **not** quote it |
 | `share-with` wildcard | `"share-with": "*"` | `share-with: "*"` | A bare `*` is a YAML alias indicator |
@@ -863,7 +879,7 @@ ECMP left at defaults).
 | Control plane / home Region | `us-west-2` |
 | Console | AWS Network Manager |
 | Policy format | declarative JSON, versioned, change-set gated |
-| Policy version used by this repository's patterns | `2025.11` |
+| Policy version used by this repository's patterns | `2026.10` |
 | Regional router | Core Network Edge (CNE), one per `edge-location` |
 | Inter-CNE routing | automatic full mesh, e-BGP |
 | Throughput | a property of the **attachment**, not the CNE; per Availability Zone for VPC attachments |
@@ -875,7 +891,8 @@ ECMP left at defaults).
 | East-west inspection | `send-via` (+ `dual-hop` / `single-hop`) |
 | Egress inspection | `send-to` |
 | Inspection container | network function group (NFG), a global construct |
-| BGP-capable attachments | Site-to-Site VPN, Connect, Direct Connect gateway, TGW peering, CNE-to-CNE |
+| BGP-capable attachments | Site-to-Site VPN, Connect, Direct Connect gateway, TGW peering |
+| Summarization between CNEs | **not supported** — rejected in an edge location association |
 | Routing policy directions | `inbound`, `outbound` |
 | Routing policies on NFGs | **not supported** |
 | Overlapping CIDRs | **not solved by the policy** (VPC Lattice / PrivateLink; 1:1 NAT on the attachment as the exception, not on `transit-gateway-route-table`) |

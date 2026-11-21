@@ -198,7 +198,7 @@ These are properties of the service, not of this repository. State them the same
 
 | Fact | Value |
 |------|-------|
-| Network policy version used by every pattern | `2025.11` |
+| Network policy version used by every pattern | `2026.10` |
 | Cloud WAN home Region | `us-west-2` |
 | Control-plane console | AWS Network Manager |
 | Managed prefix lists referenced by routing policies | MUST be created in `us-west-2`, regardless of where edge locations are |
