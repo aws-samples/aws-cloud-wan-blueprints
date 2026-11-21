@@ -246,7 +246,7 @@ Another option is one routing-policy label per DXGW, `dxAttachmentEurope` and `d
 Whichever way you identify the geography, the action that ranks the routes can also be:
 
 - **`set-local-preference`.** [Local preference is compared before AS_PATH length](https://docs.aws.amazon.com/network-manager/latest/cloudwan/cloudwan-route-evaluation.html), so the ranking holds even when the paths' AS_PATHs differ in length for reasons unrelated to geography. Set an explicit value for every tag, for example `300` for the local geography and `200` for the remote one, so the result never depends on a default.
-- **`set-med`.** MED is compared after local preference and AS_PATH length, so it decides only when both are equal. It is the weakest lever of the three, and on policy [`version`](../policy/1-core_network_version_configuration.md#what-202610-changes) `2026.10` cross-Region routes also carry a default MED that AWS Cloud WAN sets.
+- **`set-med`.** MED is compared after local preference and AS_PATH length, so it decides only when both are equal. It is the weakest lever of the three, and on policy [`version`](../policy/1-core_network_version_configuration.md#which-region-a-cne-prefers-from-202610) `2026.10` cross-Region routes also carry a default MED that AWS Cloud WAN sets.
 
 Use one ranking action per design. Mixing them on the same routes makes the outcome depend on which attribute is compared first, not on the values you chose.
 
